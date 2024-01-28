@@ -33,29 +33,14 @@ pub unsafe fn print_pdf<P: AsRef<Path>>(path: P) {
         return println!("No default printer!");
     };
 
-    let http = connect_to_dest(printer, Duration::from_secs(30));
-    if http.is_null() {
-        eprintln!("Failed to connect to the printer");
-        print_cups_error();
-        return;
-    }
-
     println!(
         "Successfully connect to the printer '{}'",
         CStr::from_ptr((*printer).name).to_string_lossy()
     );
 
-    let printer_info = ffi::cupsCopyDestInfo(http, printer);
-    if printer_info.is_null() {
-        eprintln!("Failed to get printer info");
-        print_cups_error();
-        return;
-    }
-
     let (options, num_options) = setup_dest_options(printer);
 
-    let Some(job_id) = create_dest_job(printer, printer_info, cstr!("pdf"), options, num_options)
-    else {
+    let Some(job_id) = create_job(printer, cstr!("title"), options, num_options) else {
         eprintln!("Failed to create job");
         print_cups_error();
         return;
@@ -67,15 +52,11 @@ pub unsafe fn print_pdf<P: AsRef<Path>>(path: P) {
     match fs::read(path) {
         Ok(content) => {
             print_document(
-                http,
                 printer,
-                printer_info,
                 job_id,
-                cstr!("cv.txt"),
+                cstr!("cv.pdf"),
                 &content,
-                cstr!("text/plain"),
-                options,
-                num_options,
+                cstr!("application/pdf"),
                 true,
             );
         }
@@ -130,26 +111,21 @@ unsafe fn setup_dest_options(dest: *mut ffi::cups_dest_t) -> (*mut ffi::cups_opt
     (options, count)
 }
 
-unsafe fn create_dest_job(
+unsafe fn create_job(
     dest: *mut ffi::cups_dest_t,
-    info: *mut ffi::cups_dinfo_t,
     title: &CStr,
     options: *mut ffi::cups_option_t,
     num_options: c_int,
 ) -> Option<c_int> {
-    let mut job_id = 0;
-
-    let status = ffi::cupsCreateDestJob(
+    let job_id = ffi::cupsCreateJob(
         null_mut(),
-        dest,
-        info,
-        &mut job_id,
+        (*dest).name,
         title.as_ptr(),
         num_options,
         options,
     );
 
-    if status == ffi::ipp_status_e_IPP_STATUS_OK {
+    if job_id > 0 {
         Some(job_id)
     } else {
         None
@@ -157,26 +133,19 @@ unsafe fn create_dest_job(
 }
 
 unsafe fn print_document(
-    http: *mut ffi::http_t,
     dest: *mut ffi::cups_dest_t,
-    info: *mut ffi::cups_dinfo_t,
     job_id: c_int,
     file_name: &CStr,
     buffer: &[u8],
     format: &CStr,
-    options: *mut ffi::cups_option_t,
-    num_options: c_int,
     is_final_document: bool,
 ) {
-    let start_dest_doc_status = ffi::cupsStartDestDocument(
-        http,
-        dest,
-        info,
+    let start_dest_doc_status = ffi::cupsStartDocument(
+        null_mut(),
+        (*dest).name,
         job_id,
         file_name.as_ptr(),
-        ffi::CUPS_FORMAT_AUTO.as_ptr() as *const _,
-        num_options,
-        options,
+        format.as_ptr(),
         if is_final_document { 1 } else { 0 },
     );
 
@@ -187,19 +156,25 @@ unsafe fn print_document(
     }
 
     let cups_write_request_data_status =
-        ffi::cupsWriteRequestData(http, buffer.as_ptr() as *const _, buffer.len());
+        ffi::cupsWriteRequestData(null_mut(), buffer.as_ptr() as *const _, buffer.len());
 
     if cups_write_request_data_status != ffi::http_status_e_HTTP_STATUS_CONTINUE {
         eprintln!("Error from cupsWriteRequestData: {cups_write_request_data_status}");
         print_cups_error();
+
+        ffi::cupsFinishDocument(null_mut(), (*dest).name);
+        ffi::cupsCancelJob((*dest).name, job_id);
+
         return;
     }
 
-    if ffi::cupsFinishDestDocument(http, dest, info) == ffi::ipp_status_e_IPP_STATUS_OK {
+    if ffi::cupsFinishDocument(null_mut(), (*dest).name) == ffi::ipp_status_e_IPP_STATUS_OK {
         println!("Successfully send pdf to the printer!");
     } else {
         eprintln!("Failed to send pdf to the printer");
         print_cups_error();
+
+        ffi::cupsCancelJob((*dest).name, job_id);
     }
 }
 
