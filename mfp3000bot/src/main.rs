@@ -4,6 +4,8 @@ use print::print_remote_file;
 use teloxide::prelude::*;
 use tokio::sync::oneshot;
 
+const TOKEN: &str = "6641366668:AAGWTel0IJt1gyt48KBJmLVZvhgXXQHM6AY";
+
 #[tokio::main]
 async fn main() {
     simple_logger::init().unwrap();

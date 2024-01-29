@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["mfp3000bot", "simple-cups"]
+members = ["mfp3000bot", "simple-cups", "simple-sane"]
 
 [profile.release]
 opt-level = 3

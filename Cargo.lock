@@ -1244,6 +1244,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "simple-sane"
+version = "1.0.0"
+dependencies = [
+ "bindgen",
+ "cstr",
+ "log",
+ "thiserror",
+]
+
+[[package]]
 name = "simple_logger"
 version = "4.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
