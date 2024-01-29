@@ -36,8 +36,8 @@ pub enum PrinterError {
     #[error("failed to read document: {0}")]
     ReadDocument(io::Error),
 
-    #[error("failed to print document")]
-    PrintDocument(),
+    #[error("failed to print document, cups error: {0}")]
+    PrintDocument(String),
 }
 
 impl Printer {
@@ -107,7 +107,7 @@ impl Printer {
         };
 
         if job_id == 0 {
-            return Err(PrinterError::PrintDocument());
+            return Err(PrinterError::PrintDocument(Self::cups_error()));
         }
 
         Ok(JobId(job_id))
@@ -139,7 +139,7 @@ impl Printer {
         if start_dest_doc_status == ffi::http_status_e_HTTP_STATUS_CONTINUE {
             Ok(())
         } else {
-            Err(PrinterError::PrintDocument())
+            Err(PrinterError::PrintDocument(Self::cups_error()))
         }
     }
 
@@ -160,7 +160,7 @@ impl Printer {
                 unsafe { ffi::cupsWriteRequestData(null_mut(), buffer.as_ptr().cast(), read) };
 
             if status != ffi::http_status_e_HTTP_STATUS_CONTINUE {
-                return Err(PrinterError::PrintDocument());
+                return Err(PrinterError::PrintDocument(Self::cups_error()));
             }
         }
 
@@ -173,7 +173,18 @@ impl Printer {
         if status == ffi::ipp_status_e_IPP_STATUS_OK {
             Ok(())
         } else {
-            Err(PrinterError::PrintDocument())
+            Err(PrinterError::PrintDocument(Self::cups_error()))
+        }
+    }
+
+    fn cups_error() -> String {
+        let error = unsafe { ffi::cupsLastErrorString() };
+        if !error.is_null() {
+            unsafe { CStr::from_ptr(error) }
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            "no-error".to_owned()
         }
     }
 }
