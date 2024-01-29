@@ -1,7 +1,7 @@
-use crate::cups::options::{ColorMode, MediaFormat, Options, Orientation, PrintQuality, Sides};
-use crate::cups::printer::{Document, DocumentType, Printer, PrinterError};
 use cstr::cstr;
 use reqwest::{blocking::get, Url};
+use simple_cups::options::{ColorMode, MediaFormat, Options, Orientation, PrintQuality, Sides};
+use simple_cups::printer::{Document, DocumentType, Printer, PrinterError};
 use thiserror::Error;
 use tokio::sync::oneshot;
 
@@ -41,9 +41,7 @@ fn _print_remote_file(file_name: String, file_url: Url) -> Result<(), PrintError
         .quality(PrintQuality::Normal)
         .copies(cstr!("1"));
 
-    log::info!(
-        "Print file '{file_name}' from url '{file_url}' on printer '{printer_name}' with options {options}"
-    );
+    log::info!("Print file '{file_name}' on printer '{printer_name}' with options {options}");
 
     printer
         .print_documents(&file_name, options, vec![document])

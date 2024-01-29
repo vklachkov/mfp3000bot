@@ -1,4 +1,3 @@
-mod cups;
 mod print;
 
 use print::print_remote_file;

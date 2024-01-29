@@ -27,12 +27,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anyhow"
-version = "1.0.79"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "080e9890a082662b09c1ad45f567faeeb47f22b5fb23895fbe1e651e718e25ca"
-
-[[package]]
 name = "aquamarine"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -693,11 +687,10 @@ checksum = "523dc4f511e55ab87b694dc30d0f820d60906ef06413f93d4d7a1385599cc149"
 name = "mfp3000bot"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "bindgen",
  "cstr",
  "log",
  "reqwest",
+ "simple-cups",
  "simple_logger",
  "teloxide",
  "thiserror",
@@ -1238,6 +1231,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8229b473baa5980ac72ef434c4415e70c4b5e71b423043adb4ba059f89c99a1"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "simple-cups"
+version = "1.0.0"
+dependencies = [
+ "bindgen",
+ "cstr",
+ "log",
+ "thiserror",
 ]
 
 [[package]]

@@ -1,0 +1,15 @@
+[package]
+name = "simple-cups"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+cstr = "0.2.11"
+log = "0.4.20"
+thiserror = "1.0.56"
+
+[build-dependencies]
+bindgen = "0.69.2"

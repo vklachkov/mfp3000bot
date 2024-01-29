@@ -1,20 +1,6 @@
-[package]
-name = "mfp3000bot"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-anyhow = "1.0.79"
-cstr = "0.2.11"
-log = "0.4.20"
-reqwest = { version = "0.11.23", features = ["blocking"] }
-simple_logger = "4.3.3"
-teloxide = { version = "0.12.2", features = ["macros"] }
-thiserror = "1.0.56"
-tokio = { version = "1.35.1", features = ["full"] }
-
-[build-dependencies]
-bindgen = "0.69.2"
+[workspace]
+resolver = "2"
+members = ["mfp3000bot", "simple-cups"]
 
 [profile.release]
 opt-level = 3
