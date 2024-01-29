@@ -80,13 +80,19 @@ impl Drop for Options {
 
 impl Display for Options {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (i, option) in self.slice().iter().enumerate() {
-            writeln!(
+        let slice = self.slice();
+        if slice.is_empty() {
+            return Ok(());
+        }
+
+        let last_index = slice.len() - 1;
+        for (idx, option) in slice.iter().enumerate() {
+            write!(
                 f,
-                "{n}. {name}: {value}",
-                n = i + 1,
+                "{name} = {value}{separator}",
                 name = unsafe { CStr::from_ptr(option.name).to_string_lossy() },
                 value = unsafe { CStr::from_ptr(option.value).to_string_lossy() },
+                separator = if idx != last_index { ", " } else { "" },
             )?;
         }
 

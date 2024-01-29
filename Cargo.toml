@@ -6,8 +6,8 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.79"
 cstr = "0.2.11"
-libc = "0.2.152"
 log = "0.4.20"
+reqwest = { version = "0.11.23", features = ["blocking"] }
 simple_logger = "4.3.3"
 teloxide = { version = "0.12.2", features = ["macros"] }
 thiserror = "1.0.56"
@@ -15,3 +15,9 @@ tokio = { version = "1.35.1", features = ["full"] }
 
 [build-dependencies]
 bindgen = "0.69.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = "debuginfo"
+panic = "abort"
