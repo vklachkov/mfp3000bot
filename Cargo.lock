@@ -691,6 +691,7 @@ dependencies = [
  "log",
  "reqwest",
  "simple-cups",
+ "simple-sane",
  "simple_logger",
  "teloxide",
  "thiserror",
