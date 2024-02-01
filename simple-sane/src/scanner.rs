@@ -39,7 +39,18 @@ impl Scanner {
 
         sane_try!(ffi::sane_open((*device).name, &mut device_handle));
 
-        // TODO: How to setup scanner?
+        // TODO: Setup scan options
+
+        let mut parameters = core::mem::zeroed();
+        sane_try!(ffi::sane_get_parameters(device_handle, &mut parameters));
+
+        println!("Parameters:");
+        println!("format: {}", parameters.format);
+        println!("last_frame: {}", parameters.last_frame);
+        println!("bytes_per_line: {}", parameters.bytes_per_line);
+        println!("pixels_per_line: {}", parameters.pixels_per_line);
+        println!("lines: {}", parameters.lines);
+        println!("depth: {}", parameters.depth);
 
         // Start scan
         sane_try!(ffi::sane_start(device_handle));
@@ -50,15 +61,19 @@ impl Scanner {
             let mut read = 0;
 
             // Read until EOF
-            sane_try!(ffi::sane_read(
+            let status = ffi::sane_read(
                 device_handle,
                 buffer.as_mut_ptr(),
                 buffer.len().try_into().unwrap_or(i32::MAX),
-                &mut read
-            ));
+                &mut read,
+            );
 
-            if read == 0 {
+            if status == ffi::SANE_Status_SANE_STATUS_EOF {
                 break;
+            }
+
+            if status != ffi::SANE_Status_SANE_STATUS_GOOD {
+                return status;
             }
 
             image.extend(buffer);
