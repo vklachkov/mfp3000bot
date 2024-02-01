@@ -1,11 +1,5 @@
 use std::{
-    ffi::{c_void, CStr},
-    fmt::Display,
-    io,
-    marker::PhantomData,
-    num::NonZeroUsize,
-    ops::Deref,
-    ptr::{null, null_mut},
+    ffi::{c_void, CStr}, fmt::Display, io, marker::PhantomData, mem::ManuallyDrop, num::NonZeroUsize, ops::Deref, ptr::{null, null_mut}
 };
 
 use thiserror::Error;
@@ -13,6 +7,12 @@ use thiserror::Error;
 use crate::ffi;
 
 /////////////////////////////////
+
+macro_rules! sane_try {
+    ($x:expr) => {
+        sane_status_to_result(unsafe { $x })?;
+    };
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum SaneError {
@@ -69,34 +69,38 @@ struct Sane(PhantomData<()>);
 
 impl Sane {
     pub fn new() -> Result<Self, SaneError> {
-        let status = unsafe { ffi::sane_init(null_mut(), None) };
-        sane_status_to_result(status).map(|()| Self(PhantomData))
+        log::trace!("Call ffi::sane_init()");
+        sane_try!(ffi::sane_init(null_mut(), None));
+
+        Ok(Self(PhantomData))
     }
 }
 
 impl Drop for Sane {
     fn drop(&mut self) {
+        log::trace!("Call ffi::sane_exit()");
         unsafe { ffi::sane_exit() };
     }
 }
 
-struct Device<'s> {
-    sane: &'s Sane,
-    device: &'s ffi::SANE_Device,
+struct Device<'sane> {
+    sane: &'sane Sane,
+    device: &'sane ffi::SANE_Device,
 }
 
 impl<'s> Device<'s> {
     fn get_first(sane: &'s Sane) -> Result<Option<Self>, SaneError> {
         let mut device_list = null_mut();
 
-        let status = unsafe { ffi::sane_get_devices(&mut device_list, 0) };
-        sane_status_to_result(status)?;
+        log::trace!("Call ffi::sane_get_devices()");
+        sane_try!(ffi::sane_get_devices(&mut device_list, 0));
 
-        let Some(device) = (unsafe { (*device_list).as_ref::<'s>() }) else {
-            return Ok(None);
-        };
-
-        Ok(Some(Device { sane, device }))
+        let device = unsafe { (*device_list).as_ref::<'s>() };
+        if let Some(device) = device {
+            Ok(Some(Device { sane, device }))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -122,8 +126,8 @@ impl Deref for Device<'_> {
     }
 }
 
-struct Scanner<'s> {
-    device: Device<'s>,
+struct Scanner<'sane> {
+    device: Device<'sane>,
     device_handle: *mut c_void,
 }
 
@@ -139,6 +143,136 @@ pub enum ScannerError {
 impl From<SaneError> for ScannerError {
     fn from(err: SaneError) -> Self {
         Self::Sane(err)
+    }
+}
+
+impl<'sane> Scanner<'sane> {
+    pub fn new(device: Device<'sane>) -> Result<Self, ScannerError> {
+        let mut device_handle = null_mut();
+
+        log::trace!("Call ffi::sane_open()");
+        sane_try!(ffi::sane_open(device.name, &mut device_handle));
+
+        Ok(Self {
+            device,
+            device_handle,
+        })
+    }
+
+    pub fn start<'scanner>(&'scanner mut self) -> Result<ActiveScanner<'sane, 'scanner>, ScannerError> {
+        Ok( ActiveScanner::new(self))
+    }
+}
+
+
+impl Drop for Scanner<'_> {
+    fn drop(&mut self) {
+        log::trace!("Call ffi::sane_close()");
+        unsafe { ffi::sane_close(self.device_handle) };
+    }
+}
+
+
+struct ActiveScanner<'sane, 'scanner> {
+    scanner: &'scanner mut Scanner<'sane>,
+    started: bool,
+}
+
+impl<'sane, 'scanner> ActiveScanner<'sane, 'scanner> {
+    fn new(scanner: &'scanner mut Scanner<'sane>) -> Self {
+        Self {
+            scanner,
+            started: false,
+        }
+    } 
+
+    #[rustfmt::skip]
+    fn get_parameters(&mut self) -> Result<Parameters, ScannerError> {
+        let mut params = unsafe { core::mem::zeroed() };    
+
+        self.start_scan()?;
+
+        log::trace!("Call ffi::sane_get_parameters()");
+        sane_try!(ffi::sane_get_parameters(self.scanner.device_handle, &mut params));
+
+        Ok(Parameters {
+            format: params.format.into(),
+            last_frame: {
+                assert!([0, 1].contains(&params.last_frame));
+                params.last_frame == 1
+            },
+            bytes_per_line:  {
+                assert!(params.bytes_per_line > 0, "bytes_per_line should be greater than 0");
+                params.bytes_per_line as usize
+            },
+            pixels_per_line:  {
+                assert!(params.pixels_per_line > 0, "pixels_per_line should be greater than 0");
+                params.pixels_per_line as usize
+            },
+            lines: {
+                assert!(params.lines > 0, "lines should be greater than 0");
+                params.lines as usize
+            },
+            depth: {
+                assert!(params.depth > 0, "depth should be greater than 0");
+                params.depth as usize
+            },
+        })
+    }
+
+    fn scan<W>(&mut self, mut writer: W, buffer_size: usize) -> Result<usize, ScannerError>
+    where
+        W: io::Write,
+    {
+        self.start_scan()?;        
+
+        let mut total = 0;
+        let mut buffer = vec![0u8; buffer_size];
+
+        loop {
+            let mut count = 0;
+            let read_result = unsafe {
+                log::trace!("Call ffi::sane_read()");
+                sane_status_to_result(ffi::sane_read(
+                    self.scanner.device_handle,
+                    buffer.as_mut_ptr(),
+                    buffer.len().try_into().unwrap_or(i32::MAX),
+                    &mut count,
+                ))
+            };
+
+            match read_result {
+                Ok(()) => total += count as usize,
+                Err(SaneError::EOF) => break,
+                Err(err) => return Err(ScannerError::Sane(err)),
+            }
+
+            writer.write_all(&buffer).map_err(ScannerError::Write)?;
+        }
+
+        self.started = false;
+
+        Ok(total)
+    }
+
+    fn start_scan(&mut self) -> Result<(), SaneError> {
+        if self.started {
+            return Ok(());
+        }
+
+        log::trace!("Call ffi::sane_start()");
+        sane_try!(ffi::sane_start(self.scanner.device_handle));
+        
+        self.started = true;
+        
+        Ok(())
+    }
+}
+
+impl Drop for ActiveScanner<'_, '_> {
+    fn drop(&mut self) {
+        log::trace!("Call ffi::sane_cancel()");
+        unsafe { ffi::sane_cancel(self.scanner.device_handle) };
     }
 }
 
@@ -200,94 +334,6 @@ impl Display for Parameters {
     }
 }
 
-macro_rules! sane_try {
-    ($x:expr) => {
-        sane_status_to_result(unsafe { $x })?;
-    };
-}
-
-impl<'s> Scanner<'s> {
-    pub fn new(device: Device<'s>) -> Result<Self, ScannerError> {
-        let mut device_handle = null_mut();
-        sane_try!(ffi::sane_open(device.name, &mut device_handle));
-
-        Ok(Self {
-            device,
-            device_handle,
-        })
-    }
-
-    #[rustfmt::skip]
-    fn get_parameters(&mut self) -> Result<Parameters, ScannerError> {
-        let mut params = unsafe { core::mem::zeroed() };
-        sane_try!(ffi::sane_get_parameters(self.device_handle, &mut params));
-
-        Ok(Parameters {
-            format: params.format.into(),
-            last_frame: {
-                assert!([0, 1].contains(&params.last_frame));
-                params.last_frame == 1
-            },
-            bytes_per_line:  {
-                assert!(params.bytes_per_line > 0, "bytes_per_line should be greater than 0");
-                params.bytes_per_line as usize
-            },
-            pixels_per_line:  {
-                assert!(params.pixels_per_line > 0, "pixels_per_line should be greater than 0");
-                params.pixels_per_line as usize
-            },
-            lines: {
-                assert!(params.lines > 0, "lines should be greater than 0");
-                params.lines as usize
-            },
-            depth: {
-                assert!(params.depth > 0, "depth should be greater than 0");
-                params.depth as usize
-            },
-        })
-    }
-
-    fn scan<W>(&mut self, mut writer: W, buffer_size: usize) -> Result<usize, ScannerError>
-    where
-        W: io::Write,
-    {
-        sane_try!(ffi::sane_start(self.device_handle));
-
-        let mut total = 0;
-        let mut buffer = vec![0u8; buffer_size];
-
-        loop {
-            let mut count = 0;
-            let read_result = unsafe {
-                sane_status_to_result(ffi::sane_read(
-                    self.device_handle,
-                    buffer.as_mut_ptr(),
-                    buffer.len().try_into().unwrap_or(i32::MAX),
-                    &mut count,
-                ))
-            };
-
-            match read_result {
-                Ok(()) => total += count as usize,
-                Err(SaneError::EOF) => break,
-                Err(err) => return Err(ScannerError::Sane(err)),
-            }
-
-            writer.write_all(&buffer).map_err(ScannerError::Write)?;
-        }
-
-        unsafe { ffi::sane_cancel(self.device_handle) };
-
-        Ok(total)
-    }
-}
-
-impl Drop for Scanner<'_> {
-    fn drop(&mut self) {
-        unsafe { ffi::sane_close(self.device_handle) };
-    }
-}
-
 /////////////////////////////////
 
 pub fn experiments() -> Result<(), ScannerError> {
@@ -296,28 +342,53 @@ pub fn experiments() -> Result<(), ScannerError> {
     let Some(device) = Device::get_first(&sane)? else {
         panic!("No scanners!");
     };
+    
+    // println!("Use device {device}");
 
-    println!("Use device {device}");
-
-    let mut scanner = Scanner::new(device)?;
-
-    let parameters = scanner.get_parameters()?;
-    println!("Use parameters {parameters}");
+    let mut scaaaaanner = Scanner::new(device)?;
 
     let test_file_path = "test.bin";
 
-    println!("Opening file '{test_file_path}'...");
-    let file = std::fs::OpenOptions::new()
+    // println!("Opening file '{test_file_path}'...");
+    let file1 = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
         .open(&test_file_path)
         .unwrap();
 
-    println!("Scan page into file '{test_file_path}'...");
+        let file2 = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(&test_file_path)
+        .unwrap();
 
-    scanner.scan(file, 8 * 1024)?;
+    // println!("Scan page into file '{test_file_path}'...");
 
-    println!("Successfully scan page and save it into file '{test_file_path}'!");
+    let mut scanner = scaaaaanner.start()?;
+
+    let parameters = scanner.get_parameters()?;
+    println!("Use parameters {parameters}");
+
+    scanner.scan(file1, 128 * 1024)?;
+    scanner.scan(file2, 128 * 1024)?;
+
+    drop(scanner);
+
+    let mut scanner = scaaaaanner.start()?;
+
+    drop(scanner);
+
+    let mut scanner = scaaaaanner.start()?;
+
+    let file = std::fs::OpenOptions::new()
+    .create(true)
+    .write(true)
+    .open(&test_file_path)
+    .unwrap();
+
+    scanner.scan(file, 128 * 1024)?;
+
+    // println!("Successfully scan page and save it into file '{test_file_path}'!");
 
     Ok(())
 }
