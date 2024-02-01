@@ -75,7 +75,7 @@ impl Scanner {
     unsafe fn print_devices(device_list: *mut *const ffi::SANE_Device) {
         let mut device = device_list;
         loop {
-            if device.is_null() {
+            if (*device).is_null() {
                 break;
             }
 
