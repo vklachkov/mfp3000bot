@@ -1,10 +1,15 @@
 use crate::{ffi, result::sane_try, Sane, SaneError};
 use std::{ffi::CStr, ptr::null_mut};
 
+#[derive(Clone, Copy)]
 pub struct Device<'sane> {
     sane: &'sane Sane,
     device: &'sane ffi::SANE_Device,
 }
+
+unsafe impl Send for Device<'_> {}
+
+unsafe impl Sync for Device<'_> {}
 
 impl<'s> Device<'s> {
     pub fn get_first(sane: &'s Sane) -> Result<Option<Self>, SaneError> {
