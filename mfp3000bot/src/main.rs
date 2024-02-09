@@ -2,8 +2,11 @@ mod print;
 mod scan;
 
 use print::print_remote_file;
-use scan::demo_scan;
-use teloxide::prelude::*;
+use scan::{scan, ScanState};
+use teloxide::{
+    prelude::*,
+    types::{InputFile, InputMedia, InputMediaPhoto},
+};
 use tokio::sync::oneshot;
 
 const TOKEN: &str = "6641366668:AAGWTel0IJt1gyt48KBJmLVZvhgXXQHM6AY";
@@ -19,7 +22,53 @@ async fn main() {
         log::debug!("Message: {msg:?}");
 
         let Some(doc) = msg.document() else {
-            return demo_scan(bot, msg).await;
+            let (cancel_tx, cancel_rx) = oneshot::channel();
+            let mut scan_state = scan(cancel_rx);
+
+            let msg = bot
+                .send_message(msg.chat.id, "Ожидание ответа от сервера...")
+                .await?;
+
+            while let Some(state) = scan_state.recv().await {
+                match state {
+                    ScanState::Prepair => {
+                        bot.edit_message_text(msg.chat.id, msg.id, "Подготовка к сканированию")
+                            .await?;
+                    }
+                    ScanState::Progress(p) => {
+                        bot.edit_message_text(msg.chat.id, msg.id, format!("Прогресс {p}%"))
+                            .await?;
+                    }
+                    ScanState::Done(jpeg) => {
+                        bot.edit_message_media(
+                            msg.chat.id,
+                            msg.id,
+                            InputMedia::Photo(InputMediaPhoto::new(InputFile::memory(jpeg))),
+                        )
+                        .await?;
+
+                        bot.edit_message_text(msg.chat.id, msg.id, "").await?;
+                    }
+                    ScanState::Error(err) => {
+                        bot.edit_message_text(
+                            msg.chat.id,
+                            msg.id,
+                            format!("Ошибка сканирования: {err:#}"),
+                        )
+                        .await?;
+                    }
+                    ScanState::Cancelled => {
+                        bot.edit_message_text(
+                            msg.chat.id,
+                            msg.id,
+                            format!("Сканирование отменено"),
+                        )
+                        .await?;
+                    }
+                };
+            }
+
+            return Ok(());
         };
 
         let file = bot.get_file(&doc.file.id).send().await?;

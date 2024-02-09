@@ -20,7 +20,7 @@ pub fn from_status(status: ffi::SANE_Status) -> Result<(), SaneError> {
         ffi::SANE_Status_SANE_STATUS_JAMMED => Err(SaneError::Jammed),
         ffi::SANE_Status_SANE_STATUS_NO_DOCS => Err(SaneError::NoDocs),
         ffi::SANE_Status_SANE_STATUS_COVER_OPEN => Err(SaneError::CoverOpen),
-        ffi::SANE_Status_SANE_STATUS_IO_ERROR => Err(SaneError::IoError),
+        ffi::SANE_Status_SANE_STATUS_IO_ERROR => Err(SaneError::IO),
         ffi::SANE_Status_SANE_STATUS_NO_MEM => Err(SaneError::NoMem),
         ffi::SANE_Status_SANE_STATUS_ACCESS_DENIED => Err(SaneError::AccessDenied),
         _ => panic!("invalid status value {status}"),
@@ -44,19 +44,19 @@ pub enum SaneError {
     #[error("end of file")]
     EOF,
 
-    #[error("jammed")]
+    #[error("document feeder is jammed")]
     Jammed,
 
-    #[error("no docs")]
+    #[error("document feeder is out of documents")]
     NoDocs,
 
     #[error("cover open")]
     CoverOpen,
 
-    #[error("io error")]
-    IoError,
+    #[error("error occurred while communicating with the device")]
+    IO,
 
-    #[error("no memory")]
+    #[error("not enough memory")]
     NoMem,
 
     #[error("access denied")]

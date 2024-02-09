@@ -1,10 +1,10 @@
+use anyhow::{bail, Context};
 use lazy_static::lazy_static;
 use simple_sane::{Device, Parameters, Sane, Scanner};
 use std::{
-    io::{BufWriter, Cursor},
+    io::{Cursor, Read},
     thread,
 };
-use teloxide::{prelude::*, types::InputFile, RequestError};
 use tokio::sync::{mpsc, oneshot};
 
 lazy_static! {
@@ -14,109 +14,156 @@ lazy_static! {
         .expect("no scanners");
 }
 
-pub async fn demo_scan(bot: Bot, msg: Message) -> Result<(), RequestError> {
-    let (parameters_tx, parameters_rx) = oneshot::channel::<Parameters>();
-    let (bytes_tx, mut bytes_rx) = mpsc::channel::<Vec<u8>>(4);
+pub enum ScanState {
+    Prepair,
+    Progress(u8),
+    Done(Vec<u8>),
+    Error(anyhow::Error),
+    Cancelled,
+}
+
+pub fn scan(mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
+    let (mut state_tx, state_rx) = mpsc::channel(4);
 
     thread::spawn(move || {
-        let mut scanner = Scanner::new(*DEVICE).unwrap();
-        let mut active_scanner = scanner.start().unwrap();
-
-        let parameters = active_scanner.get_parameters().unwrap();
-        if parameters_tx.send(parameters).is_err() {
-            return;
-        }
-
-        struct Foo {
-            bytes_tx: mpsc::Sender<Vec<u8>>,
-        }
-
-        impl std::io::Write for Foo {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                self.bytes_tx.blocking_send(buf.to_vec()).unwrap();
-                Ok(buf.len())
+        match scan_page(&mut state_tx, &mut cancel) {
+            Ok(Some((parameters, raw))) => {
+                match encode_jpeg(parameters, raw, 75) {
+                    Ok(jpeg) => _ = state_tx.blocking_send(ScanState::Done(jpeg)),
+                    Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
+                };
             }
-
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
+            Ok(None) => {
+                _ = state_tx.blocking_send(ScanState::Cancelled);
             }
-        }
-
-        let mut foo = Foo { bytes_tx };
-
-        active_scanner.scan(&mut foo, 16 * 1024).unwrap();
+            Err(err) => {
+                _ = state_tx.blocking_send(ScanState::Error(err));
+            }
+        };
     });
 
-    let parameters = parameters_rx.await.expect("TODO");
+    state_rx
+}
 
-    let image_size = parameters.bytes_per_line * parameters.lines;
-    let mut image_buffer = Vec::with_capacity(image_size);
-
-    let msg = bot
-        .send_message(msg.chat.id, progress_message_text(0))
-        .await?;
-
-    let mut previous_progress = 0;
-    while let Some(chunk) = bytes_rx.recv().await {
-        image_buffer.extend(chunk);
-
-        let progress = image_buffer.len() / image_size;
-        if progress != 100 && progress - previous_progress >= 5 {
-            previous_progress = progress;
-
-            bot.edit_message_text(msg.chat.id, msg.id, progress_message_text(progress))
-                .await?;
-        }
+fn scan_page(
+    state: &mut mpsc::Sender<ScanState>,
+    cancel: &mut oneshot::Receiver<()>,
+) -> anyhow::Result<Option<(Parameters, Vec<u8>)>> {
+    macro_rules! send_state {
+        ($state:expr) => {
+            if state.blocking_send($state).is_err() {
+                return Ok(None);
+            }
+        };
+    }
+    macro_rules! check_cancellation {
+        ($channel:expr) => {
+            match $channel.try_recv() {
+                Ok(()) => return Ok(None),
+                Err(oneshot::error::TryRecvError::Closed) => return Ok(None),
+                Err(oneshot::error::TryRecvError::Empty) => {}
+            }
+        };
     }
 
-    bot.edit_message_text(msg.chat.id, msg.id, progress_message_text(100))
-        .await?;
+    send_state!(ScanState::Prepair);
 
-    let jpeg = encode_jpeg(parameters, image_buffer, 65).await;
-    bot.send_photo(msg.chat.id, InputFile::memory(jpeg)).await?;
+    check_cancellation!(cancel);
+    let mut scanner = Scanner::new(*DEVICE).context("opening device")?;
 
-    Ok(())
-}
+    check_cancellation!(cancel);
+    let mut reader = scanner.start().context("starting scan")?;
 
-fn progress_message_text(progress: usize) -> String {
-    format!("Scan progress: {progress}%")
-}
+    check_cancellation!(cancel);
+    let parameters = reader.get_parameters().context("getting parameters")?;
 
-async fn encode_jpeg(parameters: Parameters, raw: Vec<u8>, output_quality: u8) -> Vec<u8> {
-    let (jpeg_tx, jpeg_rx) = oneshot::channel();
+    let page_size = parameters.bytes_per_line * parameters.lines;
+    let mut page = vec![0u8; page_size];
+    let mut page_offset = 0;
 
-    thread::spawn(move || {
-        use image::{GrayImage, ImageOutputFormat, RgbImage};
+    send_state!(ScanState::Progress(0));
 
-        let width = parameters.pixels_per_line as u32;
-        let height = parameters.lines as u32;
+    let mut previous_progress = 0;
+    loop {
+        const WINDOW_SIZE: usize = 24 * 1024;
 
-        let mut jpeg = Vec::new();
+        check_cancellation!(cancel);
 
-        match parameters.depth {
-            1 => {
-                GrayImage::from_raw(width, height, raw)
-                    .expect("image should be valid")
-                    .write_to(
-                        &mut BufWriter::new(Cursor::new(&mut jpeg)),
-                        ImageOutputFormat::Jpeg(output_quality),
-                    )
-                    .expect("should be successful");
-            }
-            3 => {
-                RgbImage::from_raw(width, height, raw)
-                    .expect("image should be valid")
-                    .write_to(
-                        &mut BufWriter::new(Cursor::new(&mut jpeg)),
-                        ImageOutputFormat::Jpeg(output_quality),
-                    )
-                    .expect("should be successful");
-            }
-            _ => panic!("unsupported"),
+        let buf = if page_offset + WINDOW_SIZE < page_size {
+            &mut page[page_offset..page_offset + WINDOW_SIZE]
+        } else {
+            &mut page[page_offset..page_size]
         };
 
-        jpeg_tx.send(jpeg).unwrap();
-    });
+        let read = reader.read(buf).context("reading from scanner")?;
+        if read == 0 {
+            break;
+        }
 
-    jpeg_rx.await.unwrap()
+        let progress = (page_offset as f64 / page_size as f64 * 100.).round() as u8;
+        if progress - previous_progress >= 5 {
+            send_state!(ScanState::Progress(progress));
+            previous_progress = progress;
+        }
+
+        page_offset += read;
+    }
+
+    check_cancellation!(cancel);
+
+    Ok(Some((parameters, page)))
+}
+
+fn encode_jpeg(
+    parameters: Parameters,
+    raw: Vec<u8>,
+    output_quality: u8,
+) -> anyhow::Result<Vec<u8>> {
+    use image::{GrayImage, ImageOutputFormat, RgbImage};
+
+    validate_parameters(parameters)?;
+
+    let width = parameters.pixels_per_line as u32;
+    let height = parameters.lines as u32;
+
+    let mut image = Vec::new();
+    let format = ImageOutputFormat::Jpeg(output_quality);
+
+    match parameters.depth {
+        1 => {
+            GrayImage::from_raw(width, height, raw)
+                .context("creating image from scanner buffer")?
+                .write_to(&mut Cursor::new(&mut image), format)
+                .unwrap();
+        }
+        3 => {
+            RgbImage::from_raw(width, height, raw)
+                .expect("creating image from scanner buffer")
+                .write_to(&mut Cursor::new(&mut image), format)
+                .unwrap();
+        }
+        depth => bail!("unsupported image depth {depth}"),
+    };
+
+    Ok(image)
+}
+
+fn validate_parameters(parameters: Parameters) -> anyhow::Result<()> {
+    if parameters.pixels_per_line > u32::MAX as usize {
+        bail!(
+            "parameters.pixels_per_line ({}) is bigger than u32::MAX ({})",
+            parameters.pixels_per_line,
+            u32::MAX
+        );
+    }
+
+    if parameters.lines > u32::MAX as usize {
+        bail!(
+            "parameters.lines ({}) is bigger than u32::MAX ({})",
+            parameters.pixels_per_line,
+            u32::MAX
+        );
+    }
+
+    Ok(())
 }

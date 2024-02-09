@@ -11,4 +11,4 @@ pub use backend::Sane;
 pub use device::Device;
 pub use parameters::Parameters;
 pub use result::SaneError;
-pub use scanner::{ActiveScanner, Scanner, ScannerError};
+pub use scanner::{PageReader, Scanner};
