@@ -40,14 +40,8 @@ async fn main() {
                             .await?;
                     }
                     ScanState::Done(jpeg) => {
-                        bot.edit_message_media(
-                            msg.chat.id,
-                            msg.id,
-                            InputMedia::Photo(InputMediaPhoto::new(InputFile::memory(jpeg))),
-                        )
-                        .await?;
-
-                        bot.edit_message_text(msg.chat.id, msg.id, "").await?;
+                        bot.send_photo(msg.chat.id, InputFile::memory(jpeg)).await?;
+                        bot.edit_message_text(msg.chat.id, msg.id, "Готово").await?;
                     }
                     ScanState::Error(err) => {
                         bot.edit_message_text(

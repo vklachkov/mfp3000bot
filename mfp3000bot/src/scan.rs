@@ -109,6 +109,8 @@ fn scan_page(
         page_offset += read;
     }
 
+    send_state!(ScanState::Progress(100));
+
     check_cancellation!(cancel);
 
     Ok(Some((parameters, page)))
