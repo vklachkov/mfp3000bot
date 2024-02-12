@@ -75,7 +75,8 @@ fn scan_page(
     let mut scanner = Scanner::new(*DEVICE).context("opening device")?;
 
     // Setup scanner
-    //
+    let options = scanner.options();
+    log::debug!("{options:#?}");
 
     check_cancellation!(cancel);
     let mut reader = scanner.start().context("starting scan")?;

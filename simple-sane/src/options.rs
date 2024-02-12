@@ -1,4 +1,4 @@
-use crate::ffi;
+use crate::{ffi, Scanner};
 use bitflags::bitflags;
 use bstr::BStr;
 use std::{
@@ -8,15 +8,18 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
-pub struct DeviceOption<'device> {
+pub struct ScannerOptions<'scanner>(Vec<ScannerOption<'scanner>>);
+
+#[derive(Debug, Clone)]
+pub struct ScannerOption<'scanner> {
     idx: usize,
-    pub name: &'device BStr,
-    pub title: &'device BStr,
-    pub description: &'device BStr,
+    pub name: Option<&'scanner BStr>,
+    pub title: &'scanner BStr,
+    pub description: &'scanner BStr,
     pub ty: Type,
     pub unit: Unit,
     pub capatibilities: Capatibilities,
-    pub constraint: Constraint<'device>,
+    pub constraint: Constraint<'scanner>,
 }
 
 #[non_exhaustive]
@@ -75,22 +78,43 @@ pub enum Constraint<'a> {
     Unsupported,
 }
 
-impl DeviceOption<'_> {
-    pub fn new(idx: usize, option: &ffi::SANE_Option_Descriptor) -> Self {
-        assert!(option.name.is_null() == false);
-        assert!(option.title.is_null() == false);
-        assert!(option.desc.is_null() == false);
+impl<'scanner> ScannerOptions<'scanner> {
+    pub fn new(scanner: &'scanner Scanner) -> Self {
+        let device_handle = unsafe { scanner.get_device_handle() };
 
+        let mut options = Vec::new();
+
+        let mut idx = 0;
+
+        while let Some(option) = unsafe {
+            log::trace!("Call ffi::sane_get_option_descriptor()");
+            ffi::sane_get_option_descriptor(device_handle, idx).as_ref()
+        } {
+            options.push(ScannerOption::new(idx as usize, option));
+            idx += 1;
+        }
+
+        Self(options)
+    }
+}
+
+impl ScannerOption<'_> {
+    pub fn new(idx: usize, option: &ffi::SANE_Option_Descriptor) -> Self {
         Self {
             idx,
-            name: unsafe { CStr::from_ptr(option.name) }.to_bytes().into(),
-            title: unsafe { CStr::from_ptr(option.title) }.to_bytes().into(),
-            description: unsafe { CStr::from_ptr(option.desc) }.to_bytes().into(),
+            name: unsafe { Self::cstr2bstr(option.name) },
+            title: unsafe { Self::cstr2bstr(option.title) }.expect("title should be not null"),
+            description: unsafe { Self::cstr2bstr(option.desc) }.expect("desc should be not null"),
             ty: option.type_.into(),
             unit: option.unit.into(),
             capatibilities: Capatibilities::from_bits_retain(unsafe { mem::transmute(option.cap) }),
             constraint: Constraint::new(option.constraint_type, option.constraint),
         }
+    }
+
+    unsafe fn cstr2bstr<'a>(str: *const std::ffi::c_char) -> Option<&'a BStr> {
+        str.as_ref()
+            .map(|cstr| CStr::from_ptr(cstr).to_bytes().into())
     }
 }
 

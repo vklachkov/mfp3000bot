@@ -1,6 +1,6 @@
 use crate::{
     ffi,
-    options::DeviceOption,
+    options::{ScannerOption, ScannerOptions},
     result::{from_status, sane_try},
     Device, Parameters, SaneError,
 };
@@ -24,35 +24,14 @@ impl<'sane> Scanner<'sane> {
         log::trace!("Call ffi::sane_open()");
         sane_try!(ffi::sane_open(device.name, &mut device_handle));
 
-        unsafe {
-            let mut descs = Vec::new();
-
-            let mut n = 0;
-            loop {
-                let Some(desc) = ffi::sane_get_option_descriptor(device_handle, n).as_ref() else {
-                    break;
-                };
-
-                // Sometimes weird backends writes null to the name field.
-                if !desc.name.is_null() {
-                    descs.push((n as usize, desc));
-                }
-
-                n += 1;
-            }
-
-            for (idx, opt) in descs {
-                let option = DeviceOption::new(idx, opt);
-                log::debug!("Option {option:#?}");
-            }
-
-            //
-        }
-
         Ok(Self {
             device,
             device_handle,
         })
+    }
+
+    pub fn options(&self) -> ScannerOptions {
+        ScannerOptions::new(self)
     }
 
     pub fn start<'scanner>(&'scanner mut self) -> Result<PageReader<'sane, 'scanner>, SaneError> {
@@ -60,6 +39,14 @@ impl<'sane> Scanner<'sane> {
         sane_try!(ffi::sane_start(self.device_handle));
 
         Ok(PageReader(self))
+    }
+
+    pub fn get_device(&self) -> &Device {
+        &self.device
+    }
+
+    pub unsafe fn get_device_handle(&self) -> *mut c_void {
+        self.device_handle
     }
 }
 
