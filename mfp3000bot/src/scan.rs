@@ -25,22 +25,25 @@ pub enum ScanState {
 pub fn scan(mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
     let (mut state_tx, state_rx) = mpsc::channel(4);
 
-    thread::spawn(move || {
-        match scan_page(&mut state_tx, &mut cancel) {
-            Ok(Some((parameters, raw))) => {
-                match encode_jpeg(parameters, raw, 75) {
-                    Ok(jpeg) => _ = state_tx.blocking_send(ScanState::Done(jpeg)),
-                    Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
-                };
-            }
-            Ok(None) => {
-                _ = state_tx.blocking_send(ScanState::Cancelled);
-            }
-            Err(err) => {
-                _ = state_tx.blocking_send(ScanState::Error(err));
-            }
-        };
-    });
+    thread::Builder::new()
+        .name("scan".to_owned())
+        .spawn(move || {
+            match scan_page(&mut state_tx, &mut cancel) {
+                Ok(Some((parameters, raw))) => {
+                    match encode_jpeg(parameters, raw, 75) {
+                        Ok(jpeg) => _ = state_tx.blocking_send(ScanState::Done(jpeg)),
+                        Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
+                    };
+                }
+                Ok(None) => {
+                    _ = state_tx.blocking_send(ScanState::Cancelled);
+                }
+                Err(err) => {
+                    _ = state_tx.blocking_send(ScanState::Error(err));
+                }
+            };
+        })
+        .expect("thread name should be valid");
 
     state_rx
 }
@@ -70,6 +73,9 @@ fn scan_page(
 
     check_cancellation!(cancel);
     let mut scanner = Scanner::new(*DEVICE).context("opening device")?;
+
+    // Setup scanner
+    //
 
     check_cancellation!(cancel);
     let mut reader = scanner.start().context("starting scan")?;

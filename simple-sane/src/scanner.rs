@@ -1,12 +1,13 @@
 use crate::{
     ffi,
+    options::DeviceOption,
     result::{from_status, sane_try},
     Device, Parameters, SaneError,
 };
-use cstr::cstr;
 use std::{
     ffi::{c_void, CStr},
     io,
+    ops::RangeInclusive,
     ptr::null_mut,
 };
 use thiserror::Error;
@@ -24,7 +25,6 @@ impl<'sane> Scanner<'sane> {
         sane_try!(ffi::sane_open(device.name, &mut device_handle));
 
         unsafe {
-            //
             let mut descs = Vec::new();
 
             let mut n = 0;
@@ -33,113 +33,17 @@ impl<'sane> Scanner<'sane> {
                     break;
                 };
 
-                descs.push(desc);
+                // Sometimes weird backends writes null to the name field.
+                if !desc.name.is_null() {
+                    descs.push((n as usize, desc));
+                }
+
                 n += 1;
             }
 
-            for ffi::SANE_Option_Descriptor {
-                name,
-                title,
-                desc,
-                type_,
-                unit,
-                size,
-                cap,
-                constraint_type,
-                constraint,
-            } in descs
-            {
-                log::info!(
-                    "Name '{name}', title '{title}', desc '{desc}', type '{ty}', unit '{unit}', size '{size}', caps '{caps}', constraint type '{constraint_type}', constraint '{constraint}'",
-                    name = if name.is_null() { cstr!("unknown").to_string_lossy() } else { CStr::from_ptr(*name).to_string_lossy() },
-                    title = if title.is_null() { cstr!("unknown").to_string_lossy() } else { CStr::from_ptr(*title).to_string_lossy() },
-                    desc = if desc.is_null() { cstr!("unknown").to_string_lossy() } else { CStr::from_ptr(*desc).to_string_lossy() },
-                    ty = match *type_ {
-                        ffi::SANE_Value_Type_SANE_TYPE_BOOL => "bool",
-                        ffi::SANE_Value_Type_SANE_TYPE_INT => "int",
-                        ffi::SANE_Value_Type_SANE_TYPE_FIXED => "fixed",
-                        ffi::SANE_Value_Type_SANE_TYPE_STRING => "string",
-                        ffi::SANE_Value_Type_SANE_TYPE_BUTTON => "button",
-                        ffi::SANE_Value_Type_SANE_TYPE_GROUP => "group",
-                        _ => "unknown"
-                    },
-                    unit = match *unit {
-                        ffi::SANE_Unit_SANE_UNIT_NONE => "none",
-                        ffi::SANE_Unit_SANE_UNIT_PIXEL => "pixel",
-                        ffi::SANE_Unit_SANE_UNIT_BIT => "bit",
-                        ffi::SANE_Unit_SANE_UNIT_MM => "mm",
-                        ffi::SANE_Unit_SANE_UNIT_DPI => "dpi",
-                        ffi::SANE_Unit_SANE_UNIT_PERCENT => "percent",
-                        ffi::SANE_Unit_SANE_UNIT_MICROSECOND => "microsecond",
-                        _ => "unknown"
-                    },
-                    caps = {
-                        let mut caps = Vec::new();
-
-                        let cap = *cap as u32;
-                        if cap & ffi::SANE_CAP_SOFT_SELECT > 0 {
-                            caps.push("SOFT_SELECT");
-                        }
-                        if cap & ffi::SANE_CAP_HARD_SELECT > 0 {
-                            caps.push("HARD_SELECT");
-                        }
-                        if cap & ffi::SANE_CAP_SOFT_DETECT > 0 {
-                            caps.push("SOFT_DETECT");
-                        }
-                        if cap & ffi::SANE_CAP_EMULATED > 0 {
-                            caps.push("EMULATED");
-                        }
-                        if cap & ffi::SANE_CAP_AUTOMATIC > 0 {
-                            caps.push("AUTOMATIC");
-                        }
-                        if cap & ffi::SANE_CAP_INACTIVE > 0 {
-                            caps.push("INACTIVE");
-                        }
-                        if cap & ffi::SANE_CAP_ADVANCED > 0 {
-                            caps.push("ADVANCED");
-                        }
-
-                        if caps.is_empty() {
-                            "no capabilities".to_owned()
-                        } else {
-                            caps.join(" | ")
-                        }
-                    },
-                    constraint_type = match *constraint_type {
-                        ffi::SANE_Constraint_Type_SANE_CONSTRAINT_NONE => "none",
-                        ffi::SANE_Constraint_Type_SANE_CONSTRAINT_RANGE => "range",
-                        ffi::SANE_Constraint_Type_SANE_CONSTRAINT_WORD_LIST => "wordlist",
-                        ffi::SANE_Constraint_Type_SANE_CONSTRAINT_STRING_LIST => "stringlist",
-                        _ => "unknown",
-                    },
-                    constraint = match *constraint_type {
-                        ffi::SANE_Constraint_Type_SANE_CONSTRAINT_NONE => "none".to_owned(),
-                        ffi::SANE_Constraint_Type_SANE_CONSTRAINT_RANGE => {
-                            let c = *constraint.range;
-                            format!("min {}, max {}, quant {}", c.min, c.max, c.quant)
-                        },
-                        ffi::SANE_Constraint_Type_SANE_CONSTRAINT_WORD_LIST => {
-                            "unsupported".to_owned()
-                        },
-                        ffi::SANE_Constraint_Type_SANE_CONSTRAINT_STRING_LIST => {
-                            let mut strings = Vec::new();
-
-                            let mut s = constraint.string_list;
-                            loop {
-                                if (*s).is_null() {
-                                    break;
-                                }
-
-                                strings.push(CStr::from_ptr(*s).to_string_lossy());
-
-                                s = s.add(1);
-                            }
-
-                            strings.join(", ")
-                        },
-                        _ => "unknown".to_owned(),
-                    },
-                );
+            for (idx, opt) in descs {
+                let option = DeviceOption::new(idx, opt);
+                log::debug!("Option {option:#?}");
             }
 
             //

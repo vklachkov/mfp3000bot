@@ -114,6 +114,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed570934406eb16438a4e976b1b4500774099c13b8cb96eec99f620f05090ddf"
 
 [[package]]
+name = "bstr"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c48f0051a4b4c5e0b6d365cd04af53aeaa209e3cc15ec2cdb69e73cc87fbd0dc"
+dependencies = [
+ "memchr",
+ "regex-automata",
+ "serde",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1488,7 +1499,8 @@ name = "simple-sane"
 version = "1.0.0"
 dependencies = [
  "bindgen",
- "cstr",
+ "bitflags 2.4.2",
+ "bstr",
  "log",
  "thiserror",
 ]

@@ -3,6 +3,7 @@
 mod backend;
 mod device;
 mod ffi;
+mod options;
 mod parameters;
 mod result;
 mod scanner;
