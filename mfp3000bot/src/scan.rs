@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
 use lazy_static::lazy_static;
-use simple_sane::{Device, OptionValue, Parameters, Sane, Scanner};
+use simple_sane::{Device, FrameFormat, OptionValue, Parameters, Sane, Scanner};
 use std::{
     io::{Cursor, Read},
     thread,
@@ -148,20 +148,20 @@ fn encode_jpeg(
     let mut image = Vec::new();
     let format = ImageOutputFormat::Jpeg(output_quality);
 
-    match parameters.bytes_per_line / parameters.pixels_per_line {
-        1 => {
+    match parameters.format {
+        FrameFormat::Gray => {
             GrayImage::from_raw(width, height, raw)
                 .context("creating image from scanner buffer")?
                 .write_to(&mut Cursor::new(&mut image), format)
                 .unwrap();
         }
-        3 => {
+        FrameFormat::RGB => {
             RgbImage::from_raw(width, height, raw)
                 .expect("creating image from scanner buffer")
                 .write_to(&mut Cursor::new(&mut image), format)
                 .unwrap();
         }
-        depth => bail!("unsupported image depth {depth}"),
+        format => bail!("unsupported image format '{format}'"),
     };
 
     Ok(image)
