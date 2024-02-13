@@ -2,7 +2,7 @@ use crate::{
     ffi,
     result::{sane_try, SaneError},
 };
-use std::{marker::PhantomData, ptr::null_mut};
+use std::{fmt::Debug, marker::PhantomData, ptr::null_mut};
 
 pub struct Sane {
     __private_field: (),
@@ -16,6 +16,12 @@ impl Sane {
         Ok(Self {
             __private_field: (),
         })
+    }
+}
+
+impl Debug for Sane {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sane").finish()
     }
 }
 

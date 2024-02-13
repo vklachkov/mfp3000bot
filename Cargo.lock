@@ -875,6 +875,7 @@ name = "mfp3000bot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bstr",
  "cstr",
  "image",
  "lazy_static",

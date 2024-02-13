@@ -1,18 +1,22 @@
-use crate::{ffi, Scanner};
+use crate::{ffi, result::from_status, SaneError, Scanner};
 use bitflags::bitflags;
 use bstr::BStr;
 use std::{
-    ffi::CStr,
+    ffi::{c_void, CStr, CString},
+    fmt::Debug,
     mem,
     ops::{Deref, RangeInclusive},
+    ptr::null_mut,
 };
 
+#[repr(transparent)]
 #[derive(Debug, Clone)]
-pub struct ScannerOptions<'scanner>(Vec<ScannerOption<'scanner>>);
+pub struct ScannerOptions<'sane, 'scanner>(Vec<ScannerOption<'sane, 'scanner>>);
 
-#[derive(Debug, Clone)]
-pub struct ScannerOption<'scanner> {
-    idx: usize,
+#[derive(Clone)]
+pub struct ScannerOption<'sane, 'scanner> {
+    scanner: &'scanner Scanner<'sane>,
+    pub number: i32,
     pub name: Option<&'scanner BStr>,
     pub title: &'scanner BStr,
     pub description: &'scanner BStr,
@@ -78,8 +82,15 @@ pub enum Constraint<'a> {
     Unsupported,
 }
 
-impl<'scanner> ScannerOptions<'scanner> {
-    pub fn new(scanner: &'scanner Scanner) -> Self {
+#[derive(Debug, Clone)]
+pub enum Value<'a> {
+    Bool(bool),
+    Int(i32),
+    String(&'a BStr),
+}
+
+impl<'sane, 'scanner> ScannerOptions<'sane, 'scanner> {
+    pub fn new(scanner: &'scanner Scanner<'sane>) -> Self {
         let device_handle = unsafe { scanner.get_device_handle() };
 
         let mut options = Vec::new();
@@ -87,10 +98,10 @@ impl<'scanner> ScannerOptions<'scanner> {
         let mut idx = 0;
 
         while let Some(option) = unsafe {
-            log::trace!("Call ffi::sane_get_option_descriptor()");
+            log::trace!("Call ffi::sane_get_option_descriptor({device_handle:p}, {idx})");
             ffi::sane_get_option_descriptor(device_handle, idx).as_ref()
         } {
-            options.push(ScannerOption::new(idx as usize, option));
+            options.push(ScannerOption::new(scanner, idx, option));
             idx += 1;
         }
 
@@ -98,10 +109,24 @@ impl<'scanner> ScannerOptions<'scanner> {
     }
 }
 
-impl ScannerOption<'_> {
-    pub fn new(idx: usize, option: &ffi::SANE_Option_Descriptor) -> Self {
+impl<'sane, 'scanner> IntoIterator for ScannerOptions<'sane, 'scanner> {
+    type Item = <Vec<ScannerOption<'sane, 'scanner>> as IntoIterator>::Item;
+    type IntoIter = <Vec<ScannerOption<'sane, 'scanner>> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'sane, 'scanner> ScannerOption<'sane, 'scanner> {
+    pub fn new(
+        scanner: &'scanner Scanner<'sane>,
+        idx: i32,
+        option: &'scanner ffi::SANE_Option_Descriptor,
+    ) -> Self {
         Self {
-            idx,
+            scanner,
+            number: idx,
             name: unsafe { Self::cstr2bstr(option.name) },
             title: unsafe { Self::cstr2bstr(option.title) }.expect("title should be not null"),
             description: unsafe { Self::cstr2bstr(option.desc) }.expect("desc should be not null"),
@@ -115,6 +140,71 @@ impl ScannerOption<'_> {
     unsafe fn cstr2bstr<'a>(str: *const std::ffi::c_char) -> Option<&'a BStr> {
         str.as_ref()
             .map(|cstr| CStr::from_ptr(cstr).to_bytes().into())
+    }
+
+    pub fn is_settable(&self) -> bool {
+        self.capatibilities.contains(Capatibilities::SoftSelect)
+    }
+
+    pub fn auto(&self) -> Result<(), SaneError> {
+        from_status(unsafe {
+            ffi::sane_control_option(
+                self.scanner.get_device_handle(),
+                self.number,
+                ffi::SANE_Action_SANE_ACTION_SET_AUTO,
+                null_mut(),
+                null_mut(),
+            )
+        })
+    }
+
+    pub fn set_value(&self, value: Value) -> Result<(), SaneError> {
+        match value {
+            Value::Bool(_) => todo!(),
+            Value::Int(_) => todo!(),
+            Value::String(str) => {
+                let str: &[u8] = str.as_ref();
+                let cstr: CString = CString::new(str).map_err(|_| SaneError::Inval)?;
+
+                let value = cstr.into_raw();
+                self.control_option(ffi::SANE_Action_SANE_ACTION_SET_VALUE, value as *mut c_void);
+
+                unsafe { CString::from_raw(value) };
+            }
+        }
+
+        Ok(())
+    }
+
+    fn control_option(
+        &self,
+        action: ffi::SANE_Action,
+        value: *mut c_void,
+    ) -> Result<(), SaneError> {
+        from_status(unsafe {
+            ffi::sane_control_option(
+                self.scanner.get_device_handle(),
+                self.number,
+                action,
+                value,
+                null_mut(),
+            )
+        })
+    }
+}
+
+impl Debug for ScannerOption<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Option")
+            .field("number", &self.number)
+            .field("name", &self.name)
+            .field("title", &self.title)
+            .field("description", &self.description)
+            .field("type", &self.ty)
+            .field("unit", &self.unit)
+            .field("capatibilities", &self.capatibilities)
+            .field("constraint", &self.constraint)
+            .finish()
     }
 }
 

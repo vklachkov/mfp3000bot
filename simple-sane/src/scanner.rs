@@ -12,6 +12,7 @@ use std::{
 };
 use thiserror::Error;
 
+#[derive(Debug)]
 pub struct Scanner<'sane> {
     device: Device<'sane>,
     device_handle: *mut c_void,

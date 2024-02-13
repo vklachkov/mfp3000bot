@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
 use lazy_static::lazy_static;
-use simple_sane::{Device, Parameters, Sane, Scanner};
+use simple_sane::{Device, OptionValue, Parameters, Sane, Scanner};
 use std::{
     io::{Cursor, Read},
     thread,
@@ -74,15 +74,25 @@ fn scan_page(
     check_cancellation!(cancel);
     let mut scanner = Scanner::new(*DEVICE).context("opening device")?;
 
-    // Setup scanner
     let options = scanner.options();
-    log::debug!("{options:#?}");
+    log::debug!("Available {options:#?}");
+
+    for option in options {
+        // FIXME: Remove hardcode, use parameters from config
+        if option.name == Some("mode".into()) {
+            _ = option.set_value(OptionValue::String("Color".into()));
+        } else {
+            _ = option.auto();
+        }
+    }
 
     check_cancellation!(cancel);
     let mut reader = scanner.start().context("starting scan")?;
 
     check_cancellation!(cancel);
     let parameters = reader.get_parameters().context("getting parameters")?;
+
+    log::debug!("Use {parameters:#?}");
 
     let page_size = parameters.bytes_per_line * parameters.lines;
     let mut page = vec![0u8; page_size];
@@ -138,7 +148,7 @@ fn encode_jpeg(
     let mut image = Vec::new();
     let format = ImageOutputFormat::Jpeg(output_quality);
 
-    match parameters.depth {
+    match parameters.bytes_per_line / parameters.pixels_per_line {
         1 => {
             GrayImage::from_raw(width, height, raw)
                 .context("creating image from scanner buffer")?

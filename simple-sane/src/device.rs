@@ -1,7 +1,7 @@
 use crate::{ffi, result::sane_try, Sane, SaneError};
 use std::{ffi::CStr, ptr::null_mut};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Device<'sane> {
     sane: &'sane Sane,
     device: &'sane ffi::SANE_Device,

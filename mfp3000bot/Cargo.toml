@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.79"
+bstr = "1.9.0"
 cstr = "0.2.11"
 image = "0.24.8"
 lazy_static = "1.4.0"
