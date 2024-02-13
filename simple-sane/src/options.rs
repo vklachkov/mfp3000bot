@@ -26,7 +26,6 @@ pub struct ScannerOption<'sane, 'scanner> {
     pub constraint: Constraint<'scanner>,
 }
 
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy)]
 pub enum Type {
     Bool,
@@ -35,10 +34,8 @@ pub enum Type {
     String,
     Button,
     Group,
-    Unsupported,
 }
 
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy)]
 pub enum Unit {
     None,
@@ -48,7 +45,6 @@ pub enum Unit {
     Dpi,
     Percent,
     Microsecond,
-    Unsupported,
 }
 
 bitflags! {
@@ -67,7 +63,6 @@ bitflags! {
     }
 }
 
-#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum Constraint<'a> {
     None,
@@ -79,7 +74,6 @@ pub enum Constraint<'a> {
         // TODO: Support constraint
     },
     StringList(Vec<&'a BStr>),
-    Unsupported,
 }
 
 #[derive(Debug, Clone)]
@@ -217,7 +211,7 @@ impl From<ffi::SANE_Value_Type> for Type {
             ffi::SANE_Value_Type_SANE_TYPE_STRING => Self::String,
             ffi::SANE_Value_Type_SANE_TYPE_BUTTON => Self::Button,
             ffi::SANE_Value_Type_SANE_TYPE_GROUP => Self::Group,
-            _ => Self::Unsupported,
+            _ => unreachable!(),
         }
     }
 }
@@ -232,7 +226,7 @@ impl From<ffi::SANE_Unit> for Unit {
             ffi::SANE_Unit_SANE_UNIT_DPI => Self::Dpi,
             ffi::SANE_Unit_SANE_UNIT_PERCENT => Self::Percent,
             ffi::SANE_Unit_SANE_UNIT_MICROSECOND => Self::Microsecond,
-            _ => Self::Unsupported,
+            _ => unreachable!(),
         }
     }
 }
@@ -270,7 +264,7 @@ impl<'a> Constraint<'a> {
 
                 Self::StringList(values)
             }
-            _ => Self::Unsupported,
+            _ => unreachable!(),
         }
     }
 }
