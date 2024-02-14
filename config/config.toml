@@ -1,0 +1,9 @@
+[telegram]
+token = "XXXXX"
+
+[devices]
+# printer = ""
+scanner = "v4l:/dev/video0"
+
+[scanner."v4l:/dev/video0"]
+mode = "color"

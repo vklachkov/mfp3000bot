@@ -5,15 +5,18 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.79"
-bstr = "1.9.0"
+argh = "0.1.12"
+bstr = { version = "1.9.0", features = ["serde"] }
 cstr = "0.2.11"
 image = "0.24.8"
 lazy_static = "1.4.0"
 log = "0.4.20"
 reqwest = { version = "0.11.23", features = ["blocking"] }
+serde = { version = "1.0.196", features = ["derive"] }
 simple-cups = { version = "1.0.0", path = "../simple-cups" }
 simple-sane = { version = "1.0.0", path = "../simple-sane" }
 simple_logger = "4.3.3"
 teloxide = { version = "0.12.2", features = ["macros"] }
 thiserror = "1.0.56"
 tokio = { version = "1.35.1", features = ["full"] }
+toml = "0.8.10"

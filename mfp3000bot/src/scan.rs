@@ -1,17 +1,19 @@
-use anyhow::{bail, Context};
+use anyhow::{anyhow, bail, Context};
+use bstr::ByteSlice;
 use lazy_static::lazy_static;
-use simple_sane::{Device, FrameFormat, OptionValue, Parameters, Sane, Scanner};
+use simple_sane::{
+    Device, FrameFormat, OptionCapatibilities, OptionValue, Parameters, Sane, Scanner,
+};
 use std::{
     io::{Cursor, Read},
     thread,
 };
 use tokio::sync::{mpsc, oneshot};
 
+use crate::config::Config;
+
 lazy_static! {
     static ref SANE: Sane = Sane::new().expect("SANE should be initialize successfully");
-    static ref DEVICE: Device<'static> = Device::get_first(&SANE)
-        .expect("SANE backend should returns devices without error")
-        .expect("no scanners");
 }
 
 pub enum ScanState {
@@ -22,13 +24,13 @@ pub enum ScanState {
     Cancelled,
 }
 
-pub fn scan(mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
+pub fn scan(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
     let (mut state_tx, state_rx) = mpsc::channel(4);
 
     thread::Builder::new()
         .name("scan".to_owned())
         .spawn(move || {
-            match scan_page(&mut state_tx, &mut cancel) {
+            match scan_page(config, &mut state_tx, &mut cancel) {
                 Ok(Some((parameters, raw))) => {
                     match encode_jpeg(parameters, raw, 75) {
                         Ok(jpeg) => _ = state_tx.blocking_send(ScanState::Done(jpeg)),
@@ -49,6 +51,7 @@ pub fn scan(mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
 }
 
 fn scan_page(
+    config: Config,
     state: &mut mpsc::Sender<ScanState>,
     cancel: &mut oneshot::Receiver<()>,
 ) -> anyhow::Result<Option<(Parameters, Vec<u8>)>> {
@@ -71,18 +74,61 @@ fn scan_page(
 
     send_state!(ScanState::Prepair);
 
+    let device_name = config
+        .devices
+        .scanner
+        .ok_or_else(|| anyhow!("scanner is not specified in the config"))?;
+
+    log::info!("Use scanner '{device_name}'");
+
     check_cancellation!(cancel);
-    let mut scanner = Scanner::new(*DEVICE).context("opening device")?;
+    let device = Device::find_by_name(&SANE, &device_name)
+        .context("reading devices")?
+        .ok_or_else(|| anyhow!("device '{device_name}' not found"))?;
+
+    check_cancellation!(cancel);
+    let mut scanner = Scanner::new(device).context("opening device")?;
 
     let options = scanner.options();
     log::debug!("Available {options:#?}");
 
-    for option in options {
-        // FIXME: Remove hardcode, use parameters from config
-        if option.name == Some("mode".into()) {
-            _ = option.set_value(OptionValue::String("Color".into()));
+    'l: for option in options {
+        let Some(option_name) = option.name else {
+            log::debug!("");
+            continue;
+        };
+
+        'setup: {
+            let Some(config) = config.scanner.get(&device_name) else {
+                log::trace!("");
+                break 'setup;
+            };
+
+            let Some(value) = config.get(option_name) else {
+                log::trace!("");
+                break 'setup;
+            };
+
+            if let Err(err) = option.set_value(OptionValue::String(value.as_bstr())) {
+                log::warn!("");
+                break 'setup;
+            } else {
+                log::info!("");
+                continue 'l;
+            }
+        }
+
+        if option
+            .capatibilities
+            .contains(OptionCapatibilities::Automatic)
+        {
+            if let Err(err) = option.auto() {
+                log::warn!("");
+            } else {
+                log::debug!("");
+            }
         } else {
-            _ = option.auto();
+            log::debug!("");
         }
     }
 

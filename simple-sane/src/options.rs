@@ -1,4 +1,4 @@
-use crate::{ffi, result::from_status, SaneError, Scanner};
+use crate::{ffi, result::from_status, utils::cstr2bstr, SaneError, Scanner};
 use bitflags::bitflags;
 use bstr::BStr;
 use std::{
@@ -121,19 +121,14 @@ impl<'sane, 'scanner> ScannerOption<'sane, 'scanner> {
         Self {
             scanner,
             number: idx,
-            name: unsafe { Self::cstr2bstr(option.name) },
-            title: unsafe { Self::cstr2bstr(option.title) }.expect("title should be not null"),
-            description: unsafe { Self::cstr2bstr(option.desc) }.expect("desc should be not null"),
+            name: unsafe { cstr2bstr(option.name) },
+            title: unsafe { cstr2bstr(option.title) }.expect("title should be not null"),
+            description: unsafe { cstr2bstr(option.desc) }.expect("desc should be not null"),
             ty: option.type_.into(),
             unit: option.unit.into(),
             capatibilities: Capatibilities::from_bits_retain(unsafe { mem::transmute(option.cap) }),
             constraint: Constraint::new(option.constraint_type, option.constraint),
         }
-    }
-
-    unsafe fn cstr2bstr<'a>(str: *const std::ffi::c_char) -> Option<&'a BStr> {
-        str.as_ref()
-            .map(|cstr| CStr::from_ptr(cstr).to_bytes().into())
     }
 
     pub fn is_settable(&self) -> bool {

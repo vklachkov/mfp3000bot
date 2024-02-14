@@ -23,7 +23,10 @@ impl<'sane> Scanner<'sane> {
         let mut device_handle = null_mut();
 
         log::trace!("Call ffi::sane_open()");
-        sane_try!(ffi::sane_open(device.name, &mut device_handle));
+        sane_try!(ffi::sane_open(
+            device.name.as_ptr().cast(),
+            &mut device_handle
+        ));
 
         Ok(Self {
             device,
