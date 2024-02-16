@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context};
 use bstr::ByteSlice;
 use lazy_static::lazy_static;
 use simple_sane::{
-    Device, FrameFormat, OptionCapatibilities, OptionValue, Parameters, Sane, Scanner,
+    Backend, Device, FrameFormat, OptionCapatibilities, OptionValue, Parameters, Scanner,
 };
 use std::{
     io::{Cursor, Read},
@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::config::Config;
 
 lazy_static! {
-    static ref SANE: Sane = Sane::new().expect("SANE should be initialize successfully");
+    static ref BACKEND: Backend = Backend::new().expect("SANE should be initialize successfully");
 }
 
 pub enum ScanState {
@@ -82,7 +82,8 @@ fn scan_page(
     log::info!("Use scanner '{device_name}'");
 
     check_cancellation!(cancel);
-    let device = Device::find_by_name(&SANE, &device_name)
+    let device = BACKEND
+        .find_device_by_name(&device_name)
         .context("reading devices")?
         .ok_or_else(|| anyhow!("device '{device_name}' not found"))?;
 
