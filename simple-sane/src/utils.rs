@@ -13,8 +13,8 @@ where
     assert!(ptr.is_null() == false);
 
     for i in 0..usize::MAX {
-        let ptr = ptr.add(i);
-        if (*ptr).is_null() {
+        let cursor = ptr.add(i);
+        if (*cursor).is_null() {
             let slice: &'a [*const T] = core::slice::from_raw_parts(ptr, i);
             let slice: &'a [&'a T] = std::mem::transmute(slice);
             return slice;
