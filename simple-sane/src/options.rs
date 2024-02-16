@@ -11,19 +11,20 @@ use std::{
 
 #[repr(transparent)]
 #[derive(Debug, Clone)]
-pub struct ScannerOptions<'sane, 'scanner>(Vec<ScannerOption<'sane, 'scanner>>);
+pub struct ScannerOptions<'b, 'd>(Vec<ScannerOption<'b, 'd>>);
 
 #[derive(Clone)]
-pub struct ScannerOption<'sane, 'scanner> {
-    scanner: &'scanner Scanner<'sane>,
+pub struct ScannerOption<'b, 'd> {
+    scanner: &'d Scanner<'b>,
+
     pub number: i32,
-    pub name: Option<&'scanner BStr>,
-    pub title: &'scanner BStr,
-    pub description: &'scanner BStr,
+    pub name: Option<&'d BStr>,
+    pub title: &'d BStr,
+    pub description: &'d BStr,
     pub ty: Type,
     pub unit: Unit,
     pub capatibilities: Capatibilities,
-    pub constraint: Constraint<'scanner>,
+    pub constraint: Constraint<'d>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -83,51 +84,46 @@ pub enum Value<'a> {
     String(&'a BStr),
 }
 
-impl<'sane, 'scanner> ScannerOptions<'sane, 'scanner> {
-    pub fn new(scanner: &'scanner Scanner<'sane>) -> Self {
-        let device_handle = unsafe { scanner.get_device_handle() };
+impl<'b, 'd> ScannerOptions<'b, 'd> {
+    pub(crate) fn new(scanner: &'d Scanner<'b>) -> Self {
+        Self(
+            (0i32..i32::MAX)
+                .map_while(|i| Self::get_option(scanner, i))
+                .collect(),
+        )
+    }
 
-        let mut options = Vec::new();
+    fn get_option(scanner: &'d Scanner<'b>, i: i32) -> Option<ScannerOption<'b, 'd>> {
+        let handle = unsafe { scanner.get_device_handle() };
 
-        let mut idx = 0;
+        log::trace!("Call ffi::sane_get_option_descriptor({handle:p}, {i})");
+        let desc = unsafe { ffi::sane_get_option_descriptor(handle, i).as_ref() }?;
 
-        while let Some(option) = unsafe {
-            log::trace!("Call ffi::sane_get_option_descriptor({device_handle:p}, {idx})");
-            ffi::sane_get_option_descriptor(device_handle, idx).as_ref()
-        } {
-            options.push(ScannerOption::new(scanner, idx, option));
-            idx += 1;
-        }
-
-        Self(options)
+        Some(ScannerOption::new(scanner, i, desc))
     }
 }
 
-impl<'sane, 'scanner> IntoIterator for ScannerOptions<'sane, 'scanner> {
-    type Item = <Vec<ScannerOption<'sane, 'scanner>> as IntoIterator>::Item;
-    type IntoIter = <Vec<ScannerOption<'sane, 'scanner>> as IntoIterator>::IntoIter;
+impl<'b, 'd> IntoIterator for ScannerOptions<'b, 'd> {
+    type Item = <Vec<ScannerOption<'b, 'd>> as IntoIterator>::Item;
+    type IntoIter = <Vec<ScannerOption<'b, 'd>> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl<'sane, 'scanner> ScannerOption<'sane, 'scanner> {
-    pub fn new(
-        scanner: &'scanner Scanner<'sane>,
-        idx: i32,
-        option: &'scanner ffi::SANE_Option_Descriptor,
-    ) -> Self {
+impl<'b, 'd> ScannerOption<'b, 'd> {
+    pub fn new(scanner: &'d Scanner<'b>, i: i32, desc: &'d ffi::SANE_Option_Descriptor) -> Self {
         Self {
             scanner,
-            number: idx,
-            name: unsafe { cstr2bstr(option.name) },
-            title: unsafe { cstr2bstr(option.title) }.expect("title should be not null"),
-            description: unsafe { cstr2bstr(option.desc) }.expect("desc should be not null"),
-            ty: option.type_.into(),
-            unit: option.unit.into(),
-            capatibilities: Capatibilities::from_bits_retain(unsafe { mem::transmute(option.cap) }),
-            constraint: Constraint::new(option.constraint_type, option.constraint),
+            number: i,
+            name: unsafe { cstr2bstr(desc.name) },
+            title: unsafe { cstr2bstr(desc.title) }.expect("title should be not null"),
+            description: unsafe { cstr2bstr(desc.desc) }.expect("desc should be not null"),
+            ty: desc.type_.into(),
+            unit: desc.unit.into(),
+            capatibilities: Capatibilities::from_bits_retain(unsafe { mem::transmute(desc.cap) }),
+            constraint: Constraint::new(desc.constraint_type, desc.constraint),
         }
     }
 
@@ -135,16 +131,12 @@ impl<'sane, 'scanner> ScannerOption<'sane, 'scanner> {
         self.capatibilities.contains(Capatibilities::SoftSelect)
     }
 
-    pub fn auto(&self) -> Result<(), SaneError> {
-        from_status(unsafe {
-            ffi::sane_control_option(
-                self.scanner.get_device_handle(),
-                self.number,
-                ffi::SANE_Action_SANE_ACTION_SET_AUTO,
-                null_mut(),
-                null_mut(),
-            )
-        })
+    pub fn is_auto_settable(&self) -> bool {
+        self.capatibilities.contains(Capatibilities::Automatic)
+    }
+
+    pub fn set_auto(&self) -> Result<(), SaneError> {
+        self.control_option(ffi::SANE_Action_SANE_ACTION_SET_AUTO, null_mut())
     }
 
     pub fn set_value(&self, value: Value) -> Result<(), SaneError> {
@@ -245,17 +237,9 @@ impl<'a> Constraint<'a> {
                 Self::WordList { /* TODO: Unsupported constraint */ }
             }
             ffi::SANE_Constraint_Type_SANE_CONSTRAINT_STRING_LIST => {
-                let mut values = Vec::new();
-
-                unsafe {
-                    let mut string_list = constraint.string_list;
-                    while let Some(value) = (*string_list).as_ref::<'a>() {
-                        let value = CStr::from_ptr(value).to_bytes().into();
-                        values.push(value);
-
-                        string_list = string_list.add(1);
-                    }
-                }
+                let mut values = (0..usize::MAX)
+                    .map_while(|offset| unsafe { cstr2bstr(*constraint.string_list.add(offset)) })
+                    .collect();
 
                 Self::StringList(values)
             }

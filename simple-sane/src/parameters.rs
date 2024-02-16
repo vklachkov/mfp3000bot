@@ -10,19 +10,6 @@ pub struct Parameters {
     pub depth: usize,
 }
 
-impl std::fmt::Display for Parameters {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "resolution {width}x{height}, format '{format}' ({bpp} bpp)",
-            width = self.pixels_per_line,
-            height = self.lines,
-            format = self.format,
-            bpp = self.depth * (self.bytes_per_line / self.pixels_per_line),
-        )
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum FrameFormat {
     Gray,
@@ -30,18 +17,6 @@ pub enum FrameFormat {
     Red,
     Green,
     Blue,
-}
-
-impl std::fmt::Display for FrameFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FrameFormat::Gray => write!(f, "gray"),
-            FrameFormat::RGB => write!(f, "RGB"),
-            FrameFormat::Red => write!(f, "red"),
-            FrameFormat::Green => write!(f, "green"),
-            FrameFormat::Blue => write!(f, "blue"),
-        }
-    }
 }
 
 impl From<ffi::SANE_Frame> for FrameFormat {

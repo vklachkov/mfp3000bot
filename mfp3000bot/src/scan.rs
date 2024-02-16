@@ -123,7 +123,7 @@ fn scan_page(
             .capatibilities
             .contains(OptionCapatibilities::Automatic)
         {
-            if let Err(err) = option.auto() {
+            if let Err(err) = option.set_auto() {
                 log::warn!("");
             } else {
                 log::debug!("");
@@ -208,7 +208,7 @@ fn encode_jpeg(
                 .write_to(&mut Cursor::new(&mut image), format)
                 .unwrap();
         }
-        format => bail!("unsupported image format '{format}'"),
+        format => bail!("unsupported image format '{format:?}'"),
     };
 
     Ok(image)

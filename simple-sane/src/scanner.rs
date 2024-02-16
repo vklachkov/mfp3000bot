@@ -13,34 +13,28 @@ use std::{
 use thiserror::Error;
 
 #[derive(Debug)]
-pub struct Scanner<'sane> {
-    device: Device<'sane>,
-    device_handle: *mut c_void,
+pub struct Scanner<'b> {
+    device: Device<'b>,
+    handle: *mut c_void,
 }
 
-impl<'sane> Scanner<'sane> {
-    pub fn new(device: Device<'sane>) -> Result<Self, SaneError> {
-        let mut device_handle = null_mut();
+impl<'b> Scanner<'b> {
+    pub fn new(device: Device<'b>) -> Result<Self, SaneError> {
+        let mut handle = null_mut();
 
-        log::trace!("Call ffi::sane_open()");
-        sane_try!(ffi::sane_open(
-            device.name.as_ptr().cast(),
-            &mut device_handle
-        ));
+        log::trace!("Call ffi::sane_open('{}', {:p})", device.name, &mut handle);
+        sane_try!(ffi::sane_open(device.name.as_ptr().cast(), &mut handle));
 
-        Ok(Self {
-            device,
-            device_handle,
-        })
+        Ok(Self { device, handle })
     }
 
     pub fn options(&self) -> ScannerOptions {
         ScannerOptions::new(self)
     }
 
-    pub fn start<'scanner>(&'scanner mut self) -> Result<PageReader<'sane, 'scanner>, SaneError> {
-        log::trace!("Call ffi::sane_start()");
-        sane_try!(ffi::sane_start(self.device_handle));
+    pub fn start<'d>(&'d mut self) -> Result<PageReader<'b, 'd>, SaneError> {
+        log::trace!("Call ffi::sane_start({:p})", self.handle);
+        sane_try!(ffi::sane_start(self.handle));
 
         Ok(PageReader(self))
     }
@@ -50,26 +44,26 @@ impl<'sane> Scanner<'sane> {
     }
 
     pub unsafe fn get_device_handle(&self) -> *mut c_void {
-        self.device_handle
+        self.handle
     }
 }
 
 impl Drop for Scanner<'_> {
     fn drop(&mut self) {
-        log::trace!("Call ffi::sane_close()");
-        unsafe { ffi::sane_close(self.device_handle) };
+        log::trace!("Call ffi::sane_close({:p})", self.handle);
+        unsafe { ffi::sane_close(self.handle) };
     }
 }
 
-pub struct PageReader<'sane, 'scanner>(&'scanner mut Scanner<'sane>);
+pub struct PageReader<'b, 'd>(&'d mut Scanner<'b>);
 
-impl<'sane, 'scanner> PageReader<'sane, 'scanner> {
+impl<'b, 'd> PageReader<'b, 'd> {
     #[rustfmt::skip]
     pub fn get_parameters(&mut self) -> Result<Parameters, SaneError> {
         let mut params = unsafe { core::mem::zeroed() };
 
-        log::trace!("Call ffi::sane_get_parameters()");
-        sane_try!(ffi::sane_get_parameters(self.0.device_handle, &mut params));
+        log::trace!("Call ffi::sane_get_parameters({:p}, {:p})", self.0.handle, &mut params);
+        sane_try!(ffi::sane_get_parameters(self.0.handle, &mut params));
 
         Ok(Parameters {
             format: params.format.into(),
@@ -101,10 +95,17 @@ impl io::Read for PageReader<'_, '_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let mut count = 0;
 
-        log::trace!("Call ffi::sane_read()");
+        log::trace!(
+            "Call ffi::sane_read({:p}, {:p}, {}, {:p})",
+            self.0.handle,
+            buf.as_mut_ptr(),
+            buf.len().try_into().unwrap_or(i32::MAX),
+            &mut count,
+        );
+
         let read_status = unsafe {
             ffi::sane_read(
-                self.0.device_handle,
+                self.0.handle,
                 buf.as_mut_ptr(),
                 buf.len().try_into().unwrap_or(i32::MAX),
                 &mut count,
@@ -124,7 +125,7 @@ impl io::Read for PageReader<'_, '_> {
 
 impl Drop for PageReader<'_, '_> {
     fn drop(&mut self) {
-        log::trace!("Call ffi::sane_cancel()");
-        unsafe { ffi::sane_cancel(self.0.device_handle) };
+        log::trace!("Call ffi::sane_cancel({:p})", self.0.handle);
+        unsafe { ffi::sane_cancel(self.0.handle) };
     }
 }
