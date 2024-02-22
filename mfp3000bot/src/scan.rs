@@ -149,7 +149,7 @@ fn scan_page(
 
     let mut previous_progress = 0;
     loop {
-        const WINDOW_SIZE: usize = 24 * 1024;
+        const WINDOW_SIZE: usize = 128 * 1024;
 
         check_cancellation!(cancel);
 
