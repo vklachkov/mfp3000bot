@@ -6,7 +6,7 @@ use std::{
     fmt::Debug,
     mem,
     ops::{Deref, RangeInclusive},
-    ptr::null_mut,
+    ptr::{self, null, null_mut},
 };
 
 #[repr(transparent)]
@@ -135,14 +135,20 @@ impl<'b, 'd> ScannerOption<'b, 'd> {
         self.capatibilities.contains(Capatibilities::Automatic)
     }
 
-    pub fn set_auto(&self) -> Result<(), SaneError> {
-        self.control_option(ffi::SANE_Action_SANE_ACTION_SET_AUTO, null_mut())
-    }
-
     pub fn set_value(&self, value: Value) -> Result<(), SaneError> {
+        // TODO: Check constraints.
+
         match value {
-            Value::Bool(_) => todo!(),
-            Value::Int(_) => todo!(),
+            Value::Bool(bool) => {
+                let value = &bool as *const bool as *mut c_void;
+                self.control_option(ffi::SANE_Action_SANE_ACTION_SET_VALUE, value);
+            }
+            Value::Int(int) => {
+                let bytes = int.to_ne_bytes();
+
+                let value = &bytes as *const u8 as *mut c_void;
+                self.control_option(ffi::SANE_Action_SANE_ACTION_SET_VALUE, value);
+            }
             Value::String(str) => {
                 let str: &[u8] = str.as_ref();
                 let cstr: CString = CString::new(str).map_err(|_| SaneError::Inval)?;
@@ -155,6 +161,10 @@ impl<'b, 'd> ScannerOption<'b, 'd> {
         }
 
         Ok(())
+    }
+
+    pub fn set_auto(&self) -> Result<(), SaneError> {
+        self.control_option(ffi::SANE_Action_SANE_ACTION_SET_AUTO, null_mut())
     }
 
     fn control_option(
