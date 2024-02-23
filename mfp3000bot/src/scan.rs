@@ -77,9 +77,10 @@ fn scan_page(
     let device_name = config
         .devices
         .scanner
+        .clone()
         .ok_or_else(|| anyhow!("scanner is not specified in the config"))?;
 
-    log::info!("Use scanner '{device_name}'");
+    log::debug!("Use scanner '{device_name}'");
 
     check_cancellation!(cancel);
     let device = BACKEND
@@ -90,48 +91,7 @@ fn scan_page(
     check_cancellation!(cancel);
     let mut scanner = Scanner::new(device).context("opening device")?;
 
-    let options = scanner.options();
-    log::debug!("Available {options:#?}");
-
-    'l: for option in options {
-        let Some(option_name) = option.name else {
-            log::debug!("");
-            continue;
-        };
-
-        'setup: {
-            let Some(config) = config.scanner.get(&device_name) else {
-                log::trace!("");
-                break 'setup;
-            };
-
-            let Some(value) = config.get(option_name) else {
-                log::trace!("");
-                break 'setup;
-            };
-
-            if let Err(err) = option.set_value(OptionValue::String(value.as_bstr())) {
-                log::warn!("");
-                break 'setup;
-            } else {
-                log::info!("");
-                continue 'l;
-            }
-        }
-
-        if option
-            .capatibilities
-            .contains(OptionCapatibilities::Automatic)
-        {
-            if let Err(err) = option.set_auto() {
-                log::warn!("");
-            } else {
-                log::debug!("");
-            }
-        } else {
-            log::debug!("");
-        }
-    }
+    setup_scanner(&mut scanner, &config);
 
     check_cancellation!(cancel);
     let mut reader = scanner.start().context("starting scan")?;
@@ -139,7 +99,7 @@ fn scan_page(
     check_cancellation!(cancel);
     let parameters = reader.get_parameters().context("getting parameters")?;
 
-    log::debug!("Use {parameters:#?}");
+    log::debug!("Start scan with parameters {parameters:?}");
 
     let page_size = parameters.bytes_per_line * parameters.lines;
     let mut page = vec![0u8; page_size];
@@ -177,7 +137,55 @@ fn scan_page(
 
     check_cancellation!(cancel);
 
+    log::debug!("Scan done");
+
     Ok(Some((parameters, page)))
+}
+
+fn setup_scanner(scanner: &mut Scanner<'_>, config: &Config) {
+    let device_name = scanner.get_device().name.to_string();
+
+    let options = scanner.options();
+    log::debug!("Start device setup. Available {options:#?}");
+
+    'setup: for (i, option) in options.into_iter().enumerate() {
+        let Some(option_name) = option.name else {
+            log::debug!("Skip unnamed option #{i}");
+            continue;
+        };
+
+        'custom_value: {
+            let Some(config) = config.scanner.get(&device_name) else {
+                log::debug!("No custom options for device '{device_name}'. Use default values");
+                break 'custom_value;
+            };
+
+            let Some(value) = config.get(option_name) else {
+                log::debug!("No custom value for option '{option_name}' (#{i}). Use default value");
+                break 'custom_value;
+            };
+
+            if let Err(err) = option.set_value(OptionValue::String(value.as_bstr())) {
+                log::warn!(
+                    "Failed to set '{value}' value for option '{option_name}' (#{i}): {err}"
+                );
+                break 'custom_value;
+            } else {
+                log::debug!("Successfully set value '{value}' for option '{option_name}' (#{i})");
+                continue 'setup;
+            }
+        }
+
+        if option.is_auto_settable() {
+            if let Err(err) = option.set_auto() {
+                log::warn!("Failed to auto configure option '{option_name}' (#{i}): {err}");
+            } else {
+                log::debug!("Successfully set automatic value for option '{option_name}' (#{i})");
+            }
+        } else {
+            log::debug!("Option '{option_name}' (#{i}) does not support auto value, skip");
+        }
+    }
 }
 
 fn raw_to_dynamic_image(parameters: Parameters, raw: Vec<u8>) -> anyhow::Result<DynamicImage> {
@@ -196,40 +204,6 @@ fn raw_to_dynamic_image(parameters: Parameters, raw: Vec<u8>) -> anyhow::Result<
         FrameFormat::RGB => DynamicImage::from(
             RgbImage::from_raw(width, height, raw).context("creating image from scanner buffer")?,
         ),
-        format => bail!("unsupported image format '{format:?}'"),
-    };
-
-    Ok(image)
-}
-
-fn encode_jpeg(
-    parameters: Parameters,
-    raw: Vec<u8>,
-    output_quality: u8,
-) -> anyhow::Result<Vec<u8>> {
-    use image::{GrayImage, ImageOutputFormat, RgbImage};
-
-    validate_parameters(parameters)?;
-
-    let width = parameters.pixels_per_line as u32;
-    let height = parameters.lines as u32;
-
-    let mut image = Vec::new();
-    let format = ImageOutputFormat::Jpeg(output_quality);
-
-    match parameters.format {
-        FrameFormat::Gray => {
-            GrayImage::from_raw(width, height, raw)
-                .context("creating image from scanner buffer")?
-                .write_to(&mut Cursor::new(&mut image), format)
-                .unwrap();
-        }
-        FrameFormat::RGB => {
-            RgbImage::from_raw(width, height, raw)
-                .expect("creating image from scanner buffer")
-                .write_to(&mut Cursor::new(&mut image), format)
-                .unwrap();
-        }
         format => bail!("unsupported image format '{format:?}'"),
     };
 
