@@ -1,3 +1,4 @@
+use crate::config::Config;
 use anyhow::{anyhow, bail, Context};
 use bstr::ByteSlice;
 use lazy_static::lazy_static;
@@ -10,8 +11,6 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
-use crate::config::Config;
-
 lazy_static! {
     static ref BACKEND: Backend = Backend::new().expect("SANE should be initialize successfully");
 }
@@ -19,9 +18,15 @@ lazy_static! {
 pub enum ScanState {
     Prepair,
     Progress(u8),
-    Done(Vec<u8>),
+    Done(RawImage),
     Error(anyhow::Error),
     Cancelled,
+}
+
+pub struct RawImage {
+    pub bytes: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
 }
 
 pub fn scan(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
@@ -31,11 +36,17 @@ pub fn scan(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver
         .name("scan".to_owned())
         .spawn(move || {
             match scan_page(config, &mut state_tx, &mut cancel) {
-                Ok(Some((parameters, raw))) => {
-                    match encode_jpeg(parameters, raw, 75) {
-                        Ok(jpeg) => _ = state_tx.blocking_send(ScanState::Done(jpeg)),
-                        Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
-                    };
+                Ok(Some((parameters, bytes))) => {
+                    _ = state_tx.blocking_send(ScanState::Done(RawImage {
+                        bytes,
+                        width: parameters.pixels_per_line,
+                        height: parameters.lines,
+                    }));
+
+                    // match encode_jpeg(parameters, raw, 75) {
+                    //     Ok(jpeg) => _ = state_tx.blocking_send(ScanState::Done(jpeg)),
+                    //     Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
+                    // };
                 }
                 Ok(None) => {
                     _ = state_tx.blocking_send(ScanState::Cancelled);
