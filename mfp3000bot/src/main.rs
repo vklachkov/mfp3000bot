@@ -1,4 +1,5 @@
 mod config;
+mod pdf_builder;
 mod print;
 mod scan;
 
@@ -6,13 +7,16 @@ use std::{
     io::{BufWriter, Cursor},
     path::PathBuf,
     process, thread,
+    time::Duration,
 };
 
 use argh::FromArgs;
 use config::Config;
+use image::DynamicImage;
 use log::Level;
+use pdf_builder::PdfBuilder;
 use print::print_remote_file;
-use scan::{scan, RawImage, ScanState};
+use scan::{scan, ScanState};
 use teloxide::{prelude::*, types::InputFile};
 use tokio::sync::oneshot;
 
@@ -122,81 +126,50 @@ async fn test_scan_to_pdf(
 
     let img1 = get_image_from_scanner(config.clone()).await.unwrap();
 
+    tokio::time::sleep(Duration::from_millis(250));
+
     bot.send_message(msg.chat.id, "Изображение 2 в процессе...")
         .await?;
 
     let img2 = get_image_from_scanner(config.clone()).await.unwrap();
 
+    tokio::time::sleep(Duration::from_millis(250));
+
+    bot.send_message(msg.chat.id, "Изображение 3 в процессе...")
+        .await?;
+
+    let img3 = get_image_from_scanner(config.clone()).await.unwrap();
+
     bot.send_message(msg.chat.id, "Собираю PDF").await?;
 
-    let pdf = imgs_to_pdf(img1, img2).await;
+    let pdf = imgs_to_pdf(vec![img1, img2, img3]).await;
 
-    bot.send_document(msg.chat.id, InputFile::memory(pdf))
+    bot.send_document(msg.chat.id, InputFile::memory(pdf).file_name("Scanned.pdf"))
         .await?;
 
     Ok(())
 }
 
-async fn imgs_to_pdf(img1: RawImage, img2: RawImage) -> Vec<u8> {
+async fn imgs_to_pdf(imgs: Vec<DynamicImage>) -> Vec<u8> {
     let (tx, rx) = oneshot::channel::<Vec<u8>>();
 
     thread::spawn(move || {
-        use printpdf::*;
+        let pdf_builder = PdfBuilder::new("Document", 300.0);
 
-        let (doc, page1, layer1) = PdfDocument::new(
-            "Title",
-            Mm::from(Px(img1.width).into_pt(300.0)),
-            Mm::from(Px(img1.height).into_pt(300.0)),
-            "Layer 1",
-        );
+        for img in imgs {
+            pdf_builder.add_image(img).unwrap();
+        }
 
-        let current_layer = doc.get_page(page1).get_layer(layer1);
+        let mut pdf = Vec::new();
+        pdf_builder.write_to(&mut pdf).unwrap();
 
-        Image::from(ImageXObject {
-            width: Px(img1.width),
-            height: Px(img1.height),
-            color_space: ColorSpace::Rgb,
-            bits_per_component: ColorBits::Bit8,
-            interpolate: true,
-            image_data: img1.bytes,
-            image_filter: None,
-            smask: None,
-            clipping_bbox: None,
-        })
-        .add_to_layer(current_layer.clone(), ImageTransform::default());
-
-        let (page2, layer2) = doc.add_page(
-            Mm::from(Px(img2.width).into_pt(300.0)),
-            Mm::from(Px(img2.height).into_pt(300.0)),
-            "Layer 1",
-        );
-
-        let current_layer = doc.get_page(page2).get_layer(layer2);
-
-        Image::from(ImageXObject {
-            width: Px(img2.width),
-            height: Px(img2.height),
-            color_space: ColorSpace::Rgb,
-            bits_per_component: ColorBits::Bit8,
-            interpolate: true,
-            image_data: img2.bytes,
-            image_filter: None,
-            smask: None,
-            clipping_bbox: None,
-        })
-        .add_to_layer(current_layer.clone(), ImageTransform::default());
-
-        let mut pdf_bytes = Vec::with_capacity(4 * 1024 * 1024);
-        doc.save(&mut BufWriter::new(Cursor::new(&mut pdf_bytes)))
-            .unwrap();
-
-        tx.send(pdf_bytes).unwrap();
+        tx.send(pdf).unwrap();
     });
 
     rx.await.unwrap()
 }
 
-async fn get_image_from_scanner(config: Config) -> Option<RawImage> {
+async fn get_image_from_scanner(config: Config) -> Option<DynamicImage> {
     let (cancel_tx, cancel_rx) = oneshot::channel();
     let mut scan_state = scan(config, cancel_rx);
 

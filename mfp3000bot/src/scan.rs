@@ -1,6 +1,7 @@
 use crate::config::Config;
 use anyhow::{anyhow, bail, Context};
 use bstr::ByteSlice;
+use image::DynamicImage;
 use lazy_static::lazy_static;
 use simple_sane::{
     Backend, Device, FrameFormat, OptionCapatibilities, OptionValue, Parameters, Scanner,
@@ -18,15 +19,9 @@ lazy_static! {
 pub enum ScanState {
     Prepair,
     Progress(u8),
-    Done(RawImage),
+    Done(::image::DynamicImage),
     Error(anyhow::Error),
     Cancelled,
-}
-
-pub struct RawImage {
-    pub bytes: Vec<u8>,
-    pub width: usize,
-    pub height: usize,
 }
 
 pub fn scan(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
@@ -37,16 +32,10 @@ pub fn scan(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver
         .spawn(move || {
             match scan_page(config, &mut state_tx, &mut cancel) {
                 Ok(Some((parameters, bytes))) => {
-                    _ = state_tx.blocking_send(ScanState::Done(RawImage {
-                        bytes,
-                        width: parameters.pixels_per_line,
-                        height: parameters.lines,
-                    }));
-
-                    // match encode_jpeg(parameters, raw, 75) {
-                    //     Ok(jpeg) => _ = state_tx.blocking_send(ScanState::Done(jpeg)),
-                    //     Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
-                    // };
+                    match raw_to_dynamic_image(parameters, bytes) {
+                        Ok(image) => _ = state_tx.blocking_send(ScanState::Done(image)),
+                        Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
+                    };
                 }
                 Ok(None) => {
                     _ = state_tx.blocking_send(ScanState::Cancelled);
@@ -189,6 +178,28 @@ fn scan_page(
     check_cancellation!(cancel);
 
     Ok(Some((parameters, page)))
+}
+
+fn raw_to_dynamic_image(parameters: Parameters, raw: Vec<u8>) -> anyhow::Result<DynamicImage> {
+    use image::{GrayImage, RgbImage};
+
+    validate_parameters(parameters)?;
+
+    let width = parameters.pixels_per_line as u32;
+    let height = parameters.lines as u32;
+
+    let image = match parameters.format {
+        FrameFormat::Gray => DynamicImage::from(
+            GrayImage::from_raw(width, height, raw)
+                .context("creating image from scanner buffer")?,
+        ),
+        FrameFormat::RGB => DynamicImage::from(
+            RgbImage::from_raw(width, height, raw).context("creating image from scanner buffer")?,
+        ),
+        format => bail!("unsupported image format '{format:?}'"),
+    };
+
+    Ok(image)
 }
 
 fn encode_jpeg(
