@@ -173,6 +173,14 @@ impl<'b, 'd> ScannerOption<'b, 'd> {
         value: *mut c_void,
     ) -> Result<(), SaneError> {
         from_status(unsafe {
+            log::trace!(
+                "Call ffi::sane_control_option({:p}, {}, {}, {:p}, 0x0)",
+                self.scanner.get_device_handle(),
+                self.number,
+                action,
+                value,
+            );
+
             ffi::sane_control_option(
                 self.scanner.get_device_handle(),
                 self.number,
