@@ -30,14 +30,20 @@ struct Args {
     /// enable extra logs
     #[argh(switch)]
     verbose: bool,
+
+    /// enable trace logs
+    #[argh(switch)]
+    trace: bool,
 }
 
 #[tokio::main]
 async fn main() {
     let args: Args = argh::from_env();
 
-    simple_logger::init_with_level(if args.verbose {
+    simple_logger::init_with_level(if args.trace {
         Level::Trace
+    } else if args.verbose {
+        Level::Debug
     } else {
         Level::Info
     })
