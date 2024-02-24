@@ -4,8 +4,7 @@ use bstr::BStr;
 use std::{
     ffi::{c_void, CStr, CString},
     fmt::Debug,
-    mem,
-    ops::{Deref, RangeInclusive},
+    mem, ops,
     ptr::{self, null, null_mut},
 };
 
@@ -68,7 +67,7 @@ bitflags! {
 pub enum Constraint<'a> {
     None,
     Range {
-        range: RangeInclusive<i32>,
+        range: ops::RangeInclusive<i32>,
         quant: i32,
     },
     WordList {
@@ -100,6 +99,14 @@ impl<'b, 'd> ScannerOptions<'b, 'd> {
         let desc = unsafe { ffi::sane_get_option_descriptor(handle, i).as_ref() }?;
 
         Some(ScannerOption::new(scanner, i, desc))
+    }
+}
+
+impl<'b, 'd> ops::Deref for ScannerOptions<'b, 'd> {
+    type Target = [ScannerOption<'b, 'd>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -247,7 +254,7 @@ impl<'a> Constraint<'a> {
                 let range = unsafe { *constraint.range };
 
                 Self::Range {
-                    range: RangeInclusive::new(range.min, range.max),
+                    range: ops::RangeInclusive::new(range.min, range.max),
                     quant: range.quant,
                 }
             }
