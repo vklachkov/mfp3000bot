@@ -50,6 +50,17 @@ impl Printer {
         Some(Self { inner })
     }
 
+    pub fn find_by_name(name: &str) -> Option<Self> {
+        let name = CString::new(name).unwrap();
+
+        let inner = unsafe { ffi::cupsGetNamedDest(null_mut(), name.as_ptr(), null()) };
+        if inner.is_null() {
+            return None;
+        }
+
+        Some(Self { inner })
+    }
+
     pub fn name(&self) -> &CStr {
         unsafe { CStr::from_ptr((*self.inner).name) }
     }

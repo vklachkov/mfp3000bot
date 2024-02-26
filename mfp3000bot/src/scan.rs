@@ -1,3 +1,5 @@
+/*
+
 use crate::config::Config;
 use anyhow::{anyhow, bail, Context};
 use bstr::ByteSlice;
@@ -14,6 +16,100 @@ use tokio::sync::{mpsc, oneshot};
 
 lazy_static! {
     static ref BACKEND: Backend = Backend::new().expect("SANE should be initialize successfully");
+}
+
+async fn test_scan_to_pdf(
+    bot: Bot,
+    msg: Message,
+    config: Config,
+) -> teloxide::requests::ResponseResult<()> {
+    bot.send_message(msg.chat.id, "Изображение 1 в процессе...")
+        .await?;
+
+    let img1 = get_image_from_scanner(config.clone()).await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(250));
+
+    bot.send_message(msg.chat.id, "Изображение 2 в процессе...")
+        .await?;
+
+    let img2 = get_image_from_scanner(config.clone()).await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(250));
+
+    bot.send_message(msg.chat.id, "Изображение 3 в процессе...")
+        .await?;
+
+    let img3 = get_image_from_scanner(config.clone()).await.unwrap();
+
+    bot.send_message(msg.chat.id, "Собираю PDF").await?;
+
+    let pdf = imgs_to_pdf(vec![img1, img2, img3]).await;
+
+    bot.send_document(msg.chat.id, InputFile::memory(pdf).file_name("Scanned.pdf"))
+        .await?;
+
+    Ok(())
+}
+
+async fn imgs_to_pdf(imgs: Vec<DynamicImage>) -> Vec<u8> {
+    let (tx, rx) = oneshot::channel::<Vec<u8>>();
+
+    thread::spawn(move || {
+        let pdf_builder = PdfBuilder::new("Document", 300.0);
+
+        for img in imgs {
+            pdf_builder.add_image(img).unwrap();
+        }
+
+        let mut pdf = Vec::new();
+        pdf_builder.write_to(&mut pdf).unwrap();
+
+        tx.send(pdf).unwrap();
+    });
+
+    rx.await.unwrap()
+}
+
+async fn get_image_from_scanner(config: Config) -> Option<DynamicImage> {
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+    let mut scan_state = scan(config, cancel_rx);
+
+    while let Some(state) = scan_state.recv().await {
+        match state {
+            ScanState::Prepair => {
+                // bot.edit_message_text(msg.chat.id, msg.id, "Подготовка к сканированию")
+                //     .await?;
+            }
+            ScanState::Progress(p) => {
+                // bot.edit_message_text(msg.chat.id, msg.id, format!("Прогресс {p}%"))
+                //     .await?;
+            }
+            ScanState::Done(img) => {
+                // bot.send_photo(msg.chat.id, InputFile::memory(jpeg)).await?;
+                // bot.edit_message_text(msg.chat.id, msg.id, "Готово").await?;
+                return Some(img);
+            }
+            ScanState::Error(err) => {
+                // bot.edit_message_text(
+                //     msg.chat.id,
+                //     msg.id,
+                //     format!("Ошибка сканирования: {err:#}"),
+                // )
+                // .await?;
+            }
+            ScanState::Cancelled => {
+                // bot.edit_message_text(
+                //     msg.chat.id,
+                //     msg.id,
+                //     format!("Сканирование отменено"),
+                // )
+                // .await?;
+            }
+        };
+    }
+
+    None
 }
 
 pub enum ScanState {
@@ -229,3 +325,5 @@ fn validate_parameters(parameters: Parameters) -> anyhow::Result<()> {
 
     Ok(())
 }
+
+*/

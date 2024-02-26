@@ -1,49 +1,42 @@
+use anyhow::{anyhow, bail};
 use cstr::cstr;
 use reqwest::{blocking::get, Url};
-use simple_cups::options::{ColorMode, MediaFormat, Options, Orientation, PrintQuality, Sides};
-use simple_cups::printer::{Document, DocumentType, Printer, PrinterError};
-use thiserror::Error;
-use tokio::sync::oneshot;
+use simple_cups::{
+    options::{ColorMode, MediaFormat, Options, Orientation, PrintQuality, Sides},
+    printer::{Document, DocumentType, Printer},
+};
 
-#[derive(Debug, Error)]
-pub enum PrintError {
-    #[error("failed to get remote file info: {0}")]
-    RemoteFile(::reqwest::Error),
+pub fn print_remote_file(printer: &str, docname: &String, url: &Url) -> anyhow::Result<()> {
+    tokio::task::block_in_place(|| {
+        let Some(printer) = Printer::find_by_name(printer) else {
+            bail!("printer '{printer}' not found");
+        };
 
-    #[error("no default printer")]
-    NoDefaultPrinter,
+        let mut document_reader = get(url.to_owned()).map_err(|err| {
+            anyhow!(
+                "failed to download document '{docname}': {}",
+                err.without_url()
+            )
+        })?;
 
-    #[error("print error: {0}")]
-    Printer(PrinterError),
-}
+        // TODO: Support plaintext, images and docx.
+        let document = Document {
+            file_name: docname,
+            ty: DocumentType::PDF,
+            reader: &mut document_reader,
+        };
 
-pub fn print_remote_file(name: String, url: Url, result: oneshot::Sender<Result<(), PrintError>>) {
-    std::thread::spawn(move || {
-        _ = result.send(_print_remote_file(name, url));
-    });
-}
+        // TODO: Move options to the config.
+        let options = Options::new()
+            .media_format(MediaFormat::A4)
+            .orientation(Orientation::Portrait)
+            .sides(Sides::OneSide)
+            .color_mode(ColorMode::Monochrome)
+            .quality(PrintQuality::Normal)
+            .copies(cstr!("1"));
 
-fn _print_remote_file(file_name: String, file_url: Url) -> Result<(), PrintError> {
-    let printer = Printer::get_default().ok_or(PrintError::NoDefaultPrinter)?;
-    let printer_name = printer.name().to_string_lossy();
+        printer.print_documents(&docname, options, vec![document])?;
 
-    let document = Document {
-        file_name: &file_name,
-        ty: DocumentType::PDF,
-        reader: &mut get(file_url.clone()).map_err(PrintError::RemoteFile)?,
-    };
-
-    let options = Options::new()
-        .media_format(MediaFormat::A4)
-        .orientation(Orientation::Portrait)
-        .sides(Sides::OneSide)
-        .color_mode(ColorMode::Monochrome)
-        .quality(PrintQuality::Normal)
-        .copies(cstr!("1"));
-
-    log::info!("Print file '{file_name}' on printer '{printer_name}' with options {options}");
-
-    printer
-        .print_documents(&file_name, options, vec![document])
-        .map_err(PrintError::Printer)
+        Ok(())
+    })
 }
