@@ -35,7 +35,7 @@ pub const SELECT_SCAN_ACTION: &str = "Выберите действие";
 #[rustfmt::skip]
 pub static SCAN_ACTIONS_BUTTONS: Lazy<HashMap<&str, (usize, &str)>> = Lazy::new(|| {
     HashMap::from([
-        (ScanAction::Cancel.into(), (0, "⛔ Отменить")),
+        (ScanAction::Cancel.into(), (0, "⛔ Прервать сканирование")),
         (ScanAction::Scan.into(), (1, "▶️ Начать")),
         (ScanAction::Preview.into(), (1, "👀 Превью")),
     ])
@@ -47,6 +47,17 @@ pub enum ScanAction {
     Preview,
     Cancel,
 }
+
+pub const SCAN_PREPAIR: &str = "Подготовка к сканированию...";
+
+pub const SCAN_PROGRESS: &dyn Fn(u8) -> String =
+    &|progress| format!("Прогресс сканирования: {progress}%");
+
+pub const SCAN_PREVIEW_DONE: &str = "Превью страницы:";
+
+pub const SCAN_ERROR: &str = "Ошибка сканирования";
+
+pub const SCAN_CANCELLED: &str = "😔 Сканирование отменено";
 
 pub const UNIMPLEMENTED: &str = "🥺 Простите, эта функция ещё не реализована!";
 

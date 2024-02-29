@@ -1,4 +1,9 @@
-use crate::{bot_data as msg, config::Config, print};
+use crate::{
+    bot_data as msg,
+    config::Config,
+    print,
+    scan::{self, ScanState},
+};
 use reqwest::Url;
 use std::{str::FromStr, sync::Arc};
 use teloxide::{
@@ -7,9 +12,10 @@ use teloxide::{
         UpdateHandler,
     },
     prelude::*,
-    types::Document,
+    types::{Document, InputFile},
     utils::command::BotCommands,
 };
+use tokio::sync::oneshot;
 
 type BotDialogue = Dialogue<BotState, InMemStorage<BotState>>;
 pub struct Globals {
@@ -28,6 +34,11 @@ pub enum BotState {
     ReceiveScanAction {
         dialogue_message: Message,
         mode: msg::ScanMode,
+    },
+
+    ScanPreview {
+        dialogue_message: Message,
+        cancel: Arc<oneshot::Sender<()>>,
     },
 }
 
@@ -187,6 +198,7 @@ async fn receive_scan_mode_selection(
 }
 
 async fn receive_scan_action_selection(
+    globals: Arc<Globals>,
     bot: Bot,
     dialogue: BotDialogue,
     q: CallbackQuery,
@@ -200,15 +212,63 @@ async fn receive_scan_action_selection(
         panic!("Invalid scan action '{action}'");
     };
 
-    // TODO: Сканирование.
-    bot.edit_message_text(
-        dialogue_message.chat.id,
-        dialogue_message.id,
-        format!("Вы выбрали режим {mode}, действие {action}"),
-    )
-    .await?;
+    match action {
+        msg::ScanAction::Scan => todo!(),
+        msg::ScanAction::Preview => {
+            let (cancel_tx, cancel_rx) = oneshot::channel();
+            dialogue
+                .update(BotState::ScanPreview {
+                    dialogue_message: dialogue_message.clone(),
+                    cancel: Arc::new(cancel_tx),
+                })
+                .await?;
 
-    dialogue.update(BotState::Empty).await?;
+            scan_preview(&globals, bot, &dialogue_message, cancel_rx).await?;
+
+            // TODO: Send message again... And don't reset state.
+
+            dialogue.update(BotState::Empty).await?;
+        }
+        msg::ScanAction::Cancel => {
+            edit_msg(&bot, &dialogue_message, msg::SCAN_CANCELLED).await?;
+            dialogue.update(BotState::Empty).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn scan_preview(
+    globals: &Globals,
+    bot: Bot,
+    dialogue_message: &Message,
+    cancel: oneshot::Receiver<()>,
+) -> anyhow::Result<()> {
+    let mut scan_state = scan::start(globals.config.clone(), cancel);
+
+    while let Some(state) = scan_state.recv().await {
+        match state {
+            ScanState::Prepair => {
+                edit_msg(&bot, dialogue_message, msg::SCAN_PREPAIR).await?;
+            }
+            ScanState::Progress(p) => {
+                edit_msg(&bot, dialogue_message, msg::SCAN_PROGRESS(p)).await?;
+            }
+            ScanState::Done(jpeg) => {
+                edit_msg(&bot, dialogue_message, msg::SCAN_PREVIEW_DONE).await?;
+
+                bot.send_photo(dialogue_message.chat.id, InputFile::memory(jpeg.0))
+                    .await?;
+            }
+            ScanState::Error(err) => {
+                log::error!("Ошибка сканирования: {err:#}");
+                edit_msg(&bot, dialogue_message, msg::SCAN_ERROR).await?;
+            }
+            ScanState::Cancelled => {
+                edit_msg(&bot, dialogue_message, msg::SCAN_CANCELLED).await?;
+            }
+        };
+    }
 
     Ok(())
 }
@@ -226,5 +286,13 @@ async fn unknown_request(bot: Bot, dialogue: BotDialogue) -> anyhow::Result<()> 
 
 pub async fn send_msg(bot: &Bot, msg: &Message, text: impl AsRef<str>) -> anyhow::Result<()> {
     bot.send_message(msg.chat.id, text.as_ref()).await?;
+
+    Ok(())
+}
+
+pub async fn edit_msg(bot: &Bot, msg: &Message, text: impl AsRef<str>) -> anyhow::Result<()> {
+    bot.edit_message_text(msg.chat.id, msg.id, text.as_ref())
+        .await?;
+
     Ok(())
 }

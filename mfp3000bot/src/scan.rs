@@ -1,15 +1,13 @@
-/*
-
 use crate::config::Config;
 use anyhow::{anyhow, bail, Context};
 use bstr::ByteSlice;
-use image::DynamicImage;
+use image::{DynamicImage, ImageOutputFormat};
 use lazy_static::lazy_static;
 use simple_sane::{
     Backend, Device, FrameFormat, OptionCapatibilities, OptionValue, Parameters, Scanner,
 };
 use std::{
-    io::{Cursor, Read},
+    io::{BufWriter, Cursor, Read},
     thread,
 };
 use tokio::sync::{mpsc, oneshot};
@@ -17,6 +15,8 @@ use tokio::sync::{mpsc, oneshot};
 lazy_static! {
     static ref BACKEND: Backend = Backend::new().expect("SANE should be initialize successfully");
 }
+
+/*
 
 async fn test_scan_to_pdf(
     bot: Bot,
@@ -112,15 +112,19 @@ async fn get_image_from_scanner(config: Config) -> Option<DynamicImage> {
     None
 }
 
+*/
+
 pub enum ScanState {
     Prepair,
     Progress(u8),
-    Done(::image::DynamicImage),
+    Done(Jpeg),
     Error(anyhow::Error),
     Cancelled,
 }
 
-pub fn scan(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
+pub struct Jpeg(pub Vec<u8>);
+
+pub fn start(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
     let (mut state_tx, state_rx) = mpsc::channel(4);
 
     thread::Builder::new()
@@ -129,7 +133,10 @@ pub fn scan(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver
             match scan_page(config, &mut state_tx, &mut cancel) {
                 Ok(Some((parameters, bytes))) => {
                     match raw_to_dynamic_image(parameters, bytes) {
-                        Ok(image) => _ = state_tx.blocking_send(ScanState::Done(image)),
+                        Ok(image) => {
+                            let jpeg = encode_jpeg(image, 75);
+                            _ = state_tx.blocking_send(ScanState::Done(jpeg))
+                        }
                         Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
                     };
                 }
@@ -178,6 +185,7 @@ fn scan_page(
 
     log::debug!("Use scanner '{device_name}'");
 
+    // TODO: Don't use get_devices, try to open by name from config.
     check_cancellation!(cancel);
     let device = BACKEND
         .find_device_by_name(&device_name)
@@ -228,8 +236,6 @@ fn scan_page(
 
         page_offset += read;
     }
-
-    send_state!(ScanState::Progress(100));
 
     check_cancellation!(cancel);
 
@@ -326,4 +332,14 @@ fn validate_parameters(parameters: Parameters) -> anyhow::Result<()> {
     Ok(())
 }
 
-*/
+fn encode_jpeg(image: DynamicImage, output_quality: u8) -> Jpeg {
+    let mut buffer = Vec::new();
+    image
+        .write_to(
+            &mut BufWriter::with_capacity(128 * 1024, Cursor::new(&mut buffer)),
+            ImageOutputFormat::Jpeg(output_quality),
+        )
+        .unwrap();
+
+    Jpeg(buffer)
+}
