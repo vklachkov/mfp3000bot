@@ -161,6 +161,7 @@ fn scan_page(
     macro_rules! send_state {
         ($state:expr) => {
             if state.blocking_send($state).is_err() {
+                log::debug!("State sender was dropped");
                 return Ok(None);
             }
         };
@@ -168,8 +169,14 @@ fn scan_page(
     macro_rules! check_cancellation {
         ($channel:expr) => {
             match $channel.try_recv() {
-                Ok(()) => return Ok(None),
-                Err(oneshot::error::TryRecvError::Closed) => return Ok(None),
+                Ok(()) => {
+                    log::debug!("Scan cancelled");
+                    return Ok(None);
+                }
+                Err(oneshot::error::TryRecvError::Closed) => {
+                    log::debug!("Cancel sender was dropped");
+                    return Ok(None);
+                }
                 Err(oneshot::error::TryRecvError::Empty) => {}
             }
         };

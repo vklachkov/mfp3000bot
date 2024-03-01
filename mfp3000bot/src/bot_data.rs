@@ -57,6 +57,13 @@ pub const SCAN_PREVIEW_DONE: &str = "Превью страницы:";
 
 pub const SCAN_ERROR: &str = "Ошибка сканирования";
 
+#[rustfmt::skip]
+pub static SCAN_CANCEL: Lazy<HashMap<&str, (usize, &str)>> = Lazy::new(|| {
+    HashMap::from([
+        (ScanAction::Cancel.into(), (0, "⛔ Прервать сканирование")),
+    ])
+});
+
 pub const SCAN_CANCELLED: &str = "😔 Сканирование отменено";
 
 pub const UNIMPLEMENTED: &str = "🥺 Простите, эта функция ещё не реализована!";

@@ -1,5 +1,5 @@
 use crate::{
-    bot_data as msg,
+    bot_data::{self as msg, buttons_to_inline_keyboard},
     config::Config,
     print,
     scan::{self, ScanState},
@@ -12,10 +12,10 @@ use teloxide::{
         UpdateHandler,
     },
     prelude::*,
-    types::{Document, InputFile},
+    types::{Chat, Document, InlineKeyboardMarkup, InputFile},
     utils::command::BotCommands,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex};
 
 type BotDialogue = Dialogue<BotState, InMemStorage<BotState>>;
 pub struct Globals {
@@ -38,9 +38,11 @@ pub enum BotState {
 
     ScanPreview {
         dialogue_message: Message,
-        cancel: Arc<oneshot::Sender<()>>,
+        cancel: ScanCancellationToken,
     },
 }
+
+type ScanCancellationToken = Arc<Mutex<Option<oneshot::Sender<()>>>>;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase")]
@@ -92,6 +94,13 @@ fn schema() -> UpdateHandler<anyhow::Error> {
             }]
             .endpoint(receive_scan_action_selection),
         )
+        .branch(
+            case![BotState::ScanPreview {
+                dialogue_message,
+                cancel,
+            }]
+            .endpoint(receive_scan_preview_cancellation),
+        )
         .branch(dptree::endpoint(unknown_request));
 
     dialogue::enter::<Update, InMemStorage<BotState>, BotState, _>()
@@ -100,12 +109,12 @@ fn schema() -> UpdateHandler<anyhow::Error> {
 }
 
 async fn print_hint(bot: Bot, msg: Message) -> anyhow::Result<()> {
-    send_msg(&bot, &msg, msg::PRINT_COMMAND_TEXT).await
+    send_msg(&bot, msg.chat.id, msg::PRINT_COMMAND_TEXT).await
 }
 
 async fn print_doc(globals: Arc<Globals>, bot: Bot, msg: Message) -> anyhow::Result<()> {
     let Some(printer) = globals.config.devices.printer.as_deref() else {
-        return send_msg(&bot, &msg, msg::NO_PRINTER_IN_CFG).await;
+        return send_msg(&bot, msg.chat.id, msg::NO_PRINTER_IN_CFG).await;
     };
 
     let document = msg
@@ -117,13 +126,13 @@ async fn print_doc(globals: Arc<Globals>, bot: Bot, msg: Message) -> anyhow::Res
     match print::print_remote_file(printer, &document_name, &document_url) {
         Ok(()) => {
             log::debug!("Document '{document_name}' successfully printed");
-            send_msg(&bot, &msg, msg::SUCCESSFUL_PRINT(&document_name)).await?;
+            send_msg(&bot, msg.chat.id, &msg::SUCCESSFUL_PRINT(&document_name)).await?;
         }
 
         // TODO: Отправлять в сообщение человекочитаемую ошибку печати.
         Err(err) => {
             log::error!("Failed to print document '{document_name}': {err:#}");
-            send_msg(&bot, &msg, msg::FAILED_TO_PRINT(&document_name)).await?;
+            send_msg(&bot, msg.chat.id, &msg::FAILED_TO_PRINT(&document_name)).await?;
         }
     }
 
@@ -179,13 +188,32 @@ async fn receive_scan_mode_selection(
         panic!("Invalid scan mode '{mode}'");
     };
 
-    bot.edit_message_text(
-        dialogue_message.chat.id,
-        dialogue_message.id,
-        msg::SELECT_SCAN_ACTION,
-    )
-    .reply_markup(msg::buttons_to_inline_keyboard(&msg::SCAN_ACTIONS_BUTTONS))
-    .await?;
+    select_scan_action(bot, dialogue, Some(dialogue_message), mode).await?;
+
+    Ok(())
+}
+
+async fn select_scan_action(
+    bot: Bot,
+    dialogue: BotDialogue,
+    dialogue_message: Option<Message>,
+    mode: msg::ScanMode,
+) -> anyhow::Result<()> {
+    let actions = msg::buttons_to_inline_keyboard(&msg::SCAN_ACTIONS_BUTTONS);
+
+    let dialogue_message = if let Some(dialogue_message) = dialogue_message {
+        bot.edit_message_text(
+            dialogue_message.chat.id,
+            dialogue_message.id,
+            msg::SELECT_SCAN_ACTION,
+        )
+        .reply_markup(actions)
+        .await?
+    } else {
+        bot.send_message(dialogue.chat_id(), msg::SELECT_SCAN_ACTION)
+            .reply_markup(actions)
+            .await?
+    };
 
     dialogue
         .update(BotState::ReceiveScanAction {
@@ -215,19 +243,7 @@ async fn receive_scan_action_selection(
     match action {
         msg::ScanAction::Scan => todo!(),
         msg::ScanAction::Preview => {
-            let (cancel_tx, cancel_rx) = oneshot::channel();
-            dialogue
-                .update(BotState::ScanPreview {
-                    dialogue_message: dialogue_message.clone(),
-                    cancel: Arc::new(cancel_tx),
-                })
-                .await?;
-
-            scan_preview(&globals, bot, &dialogue_message, cancel_rx).await?;
-
-            // TODO: Send message again... And don't reset state.
-
-            dialogue.update(BotState::Empty).await?;
+            scan_preview(globals, bot, dialogue, (dialogue_message, mode)).await?;
         }
         msg::ScanAction::Cancel => {
             edit_msg(&bot, &dialogue_message, msg::SCAN_CANCELLED).await?;
@@ -239,33 +255,62 @@ async fn receive_scan_action_selection(
 }
 
 async fn scan_preview(
-    globals: &Globals,
+    globals: Arc<Globals>,
     bot: Bot,
-    dialogue_message: &Message,
+    dialogue: BotDialogue,
+    (dialogue_message, mode): (Message, msg::ScanMode), // From `State::ReceiveScanAction`.
+) -> anyhow::Result<()> {
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+
+    dialogue
+        .update(BotState::ScanPreview {
+            dialogue_message: dialogue_message.clone(),
+            cancel: Arc::new(Mutex::new(Some(cancel_tx))),
+        })
+        .await?;
+
+    tokio::spawn(async move {
+        if let Err(err) = scan_preview_impl(globals, &bot, &dialogue_message, cancel_rx).await {
+            log::error!("Telegram error: {err:#}");
+        }
+
+        if let Err(err) = select_scan_action(bot, dialogue, None, mode).await {
+            log::error!("Telegram error: {err:#}");
+        }
+    });
+
+    Ok(())
+}
+
+async fn scan_preview_impl(
+    globals: Arc<Globals>,
+    bot: &Bot,
+    message: &Message,
     cancel: oneshot::Receiver<()>,
 ) -> anyhow::Result<()> {
-    let mut scan_state = scan::start(globals.config.clone(), cancel);
+    let cancel_button = buttons_to_inline_keyboard(&msg::SCAN_CANCEL);
 
-    while let Some(state) = scan_state.recv().await {
+    let mut state_receiver = scan::start(globals.config.clone(), cancel);
+    while let Some(state) = state_receiver.recv().await {
         match state {
             ScanState::Prepair => {
-                edit_msg(&bot, dialogue_message, msg::SCAN_PREPAIR).await?;
+                edit_interative(&bot, &message, msg::SCAN_PREPAIR, &cancel_button).await?;
             }
             ScanState::Progress(p) => {
-                edit_msg(&bot, dialogue_message, msg::SCAN_PROGRESS(p)).await?;
+                edit_interative(&bot, &message, &msg::SCAN_PROGRESS(p), &cancel_button).await?;
             }
             ScanState::Done(jpeg) => {
-                edit_msg(&bot, dialogue_message, msg::SCAN_PREVIEW_DONE).await?;
+                edit_msg(&bot, &message, msg::SCAN_PREVIEW_DONE).await?;
 
-                bot.send_photo(dialogue_message.chat.id, InputFile::memory(jpeg.0))
+                bot.send_photo(message.chat.id, InputFile::memory(jpeg.0))
                     .await?;
             }
             ScanState::Error(err) => {
                 log::error!("Ошибка сканирования: {err:#}");
-                edit_msg(&bot, dialogue_message, msg::SCAN_ERROR).await?;
+                edit_msg(&bot, &message, msg::SCAN_ERROR).await?;
             }
             ScanState::Cancelled => {
-                edit_msg(&bot, dialogue_message, msg::SCAN_CANCELLED).await?;
+                edit_msg(&bot, &message, msg::SCAN_CANCELLED).await?;
             }
         };
     }
@@ -273,8 +318,25 @@ async fn scan_preview(
     Ok(())
 }
 
+async fn receive_scan_preview_cancellation(
+    q: CallbackQuery,
+    (_, cancel): (Message, ScanCancellationToken), // From `State::ScanPreview`.
+) -> anyhow::Result<()> {
+    if q.data.is_none() {
+        return Ok(());
+    };
+
+    let Some(cancel) = cancel.lock().await.take() else {
+        return Ok(());
+    };
+
+    _ = cancel.send(());
+
+    Ok(())
+}
+
 async fn help(bot: Bot, msg: Message) -> anyhow::Result<()> {
-    send_msg(&bot, &msg, msg::UNIMPLEMENTED).await
+    send_msg(&bot, msg.chat.id, msg::UNIMPLEMENTED).await
 }
 
 async fn unknown_request(bot: Bot, dialogue: BotDialogue) -> anyhow::Result<()> {
@@ -284,14 +346,37 @@ async fn unknown_request(bot: Bot, dialogue: BotDialogue) -> anyhow::Result<()> 
     Ok(())
 }
 
-pub async fn send_msg(bot: &Bot, msg: &Message, text: impl AsRef<str>) -> anyhow::Result<()> {
-    bot.send_message(msg.chat.id, text.as_ref()).await?;
+pub async fn send_msg(bot: &Bot, chat_id: ChatId, text: &str) -> anyhow::Result<()> {
+    bot.send_message(chat_id, text).await?;
+    Ok(())
+}
+
+pub async fn send_interative(
+    bot: &Bot,
+    chat_id: ChatId,
+    text: &str,
+    buttons: &InlineKeyboardMarkup,
+) -> anyhow::Result<()> {
+    bot.send_message(chat_id, text)
+        .reply_markup(buttons.to_owned())
+        .await?;
 
     Ok(())
 }
 
-pub async fn edit_msg(bot: &Bot, msg: &Message, text: impl AsRef<str>) -> anyhow::Result<()> {
-    bot.edit_message_text(msg.chat.id, msg.id, text.as_ref())
+pub async fn edit_msg(bot: &Bot, msg: &Message, text: &str) -> anyhow::Result<()> {
+    bot.edit_message_text(msg.chat.id, msg.id, text).await?;
+    Ok(())
+}
+
+pub async fn edit_interative(
+    bot: &Bot,
+    msg: &Message,
+    text: &str,
+    buttons: &InlineKeyboardMarkup,
+) -> anyhow::Result<()> {
+    bot.edit_message_text(msg.chat.id, msg.id, text)
+        .reply_markup(buttons.to_owned())
         .await?;
 
     Ok(())
