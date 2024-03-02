@@ -2,7 +2,7 @@ use crate::{
     bot_data::{self as msg, buttons_to_inline_keyboard},
     config::Config,
     print,
-    scan::{self, ScanState},
+    scan::{self, Jpeg, ScanState},
 };
 use reqwest::Url;
 use std::{str::FromStr, sync::Arc};
@@ -12,7 +12,7 @@ use teloxide::{
         UpdateHandler,
     },
     prelude::*,
-    types::{Chat, Document, InlineKeyboardMarkup, InputFile},
+    types::{Document, InlineKeyboardMarkup, InputFile},
     utils::command::BotCommands,
 };
 use tokio::sync::{oneshot, Mutex};
@@ -31,18 +31,24 @@ pub enum BotState {
         dialogue_message: Message,
     },
 
-    ReceiveScanAction {
+    ReceiveFirstScanAction {
         dialogue_message: Message,
         mode: msg::ScanMode,
     },
 
-    ScanPreview {
-        dialogue_message: Message,
+    ScanPage {
         cancel: ScanCancellationToken,
+    },
+
+    ReceiveMultipageScanAction {
+        dialogue_message: Message,
+        pages: Pages,
     },
 }
 
 type ScanCancellationToken = Arc<Mutex<Option<oneshot::Sender<()>>>>;
+
+type Pages = Arc<Mutex<Vec<Jpeg>>>;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase")]
@@ -88,19 +94,20 @@ fn schema() -> UpdateHandler<anyhow::Error> {
                 .endpoint(receive_scan_mode_selection),
         )
         .branch(
-            case![BotState::ReceiveScanAction {
+            case![BotState::ReceiveFirstScanAction {
                 dialogue_message,
                 mode
             }]
-            .endpoint(receive_scan_action_selection),
+            .endpoint(receive_first_scan_action_selection),
         )
         .branch(
-            case![BotState::ScanPreview {
+            case![BotState::ReceiveMultipageScanAction {
                 dialogue_message,
-                cancel,
+                pages
             }]
-            .endpoint(receive_scan_preview_cancellation),
+            .endpoint(receive_multipage_scan_action_selection),
         )
+        .branch(case![BotState::ScanPage { cancel }].endpoint(receive_scan_cancellation))
         .branch(dptree::endpoint(unknown_request));
 
     dialogue::enter::<Update, InMemStorage<BotState>, BotState, _>()
@@ -164,7 +171,7 @@ async fn get_document(
 async fn start_scan(bot: Bot, dialogue: BotDialogue, msg: Message) -> anyhow::Result<()> {
     let dialogue_message = bot
         .send_message(msg.chat.id, msg::SELECT_SCAN_MODE)
-        .reply_markup(msg::buttons_to_inline_keyboard(&msg::SCAN_MODE_BUTTONS))
+        .reply_markup(msg::buttons_to_inline_keyboard(&*msg::SCAN_MODE_BUTTONS))
         .await?;
 
     dialogue
@@ -199,7 +206,7 @@ async fn select_scan_action(
     dialogue_message: Option<Message>,
     mode: msg::ScanMode,
 ) -> anyhow::Result<()> {
-    let actions = msg::buttons_to_inline_keyboard(&msg::SCAN_ACTIONS_BUTTONS);
+    let actions = msg::buttons_to_inline_keyboard(&*msg::SCAN_ACTIONS_BUTTONS);
 
     let dialogue_message = if let Some(dialogue_message) = dialogue_message {
         bot.edit_message_text(
@@ -216,7 +223,7 @@ async fn select_scan_action(
     };
 
     dialogue
-        .update(BotState::ReceiveScanAction {
+        .update(BotState::ReceiveFirstScanAction {
             dialogue_message,
             mode,
         })
@@ -225,7 +232,7 @@ async fn select_scan_action(
     Ok(())
 }
 
-async fn receive_scan_action_selection(
+async fn receive_first_scan_action_selection(
     globals: Arc<Globals>,
     bot: Bot,
     dialogue: BotDialogue,
@@ -241,7 +248,9 @@ async fn receive_scan_action_selection(
     };
 
     match action {
-        msg::ScanAction::Scan => todo!(),
+        msg::ScanAction::Scan => {
+            scan_first_page(globals, bot, dialogue, (dialogue_message, mode)).await?;
+        }
         msg::ScanAction::Preview => {
             scan_preview(globals, bot, dialogue, (dialogue_message, mode)).await?;
         }
@@ -249,6 +258,7 @@ async fn receive_scan_action_selection(
             edit_msg(&bot, &dialogue_message, msg::SCAN_CANCELLED).await?;
             dialogue.update(BotState::Empty).await?;
         }
+        _ => unreachable!(),
     }
 
     Ok(())
@@ -263,18 +273,29 @@ async fn scan_preview(
     let (cancel_tx, cancel_rx) = oneshot::channel();
 
     dialogue
-        .update(BotState::ScanPreview {
-            dialogue_message: dialogue_message.clone(),
+        .update(BotState::ScanPage {
             cancel: Arc::new(Mutex::new(Some(cancel_tx))),
         })
         .await?;
 
     tokio::spawn(async move {
-        if let Err(err) = scan_preview_impl(globals, &bot, &dialogue_message, cancel_rx).await {
-            log::error!("Telegram error: {err:#}");
-        }
+        let result: anyhow::Result<()> = (|| async {
+            let jpeg = scan(globals, &bot, &dialogue_message, cancel_rx).await?;
 
-        if let Err(err) = select_scan_action(bot, dialogue, None, mode).await {
+            if let Some(jpeg) = jpeg {
+                edit_msg(&bot, &dialogue_message, msg::SCAN_PREVIEW_DONE).await?;
+
+                bot.send_photo(dialogue_message.chat.id, InputFile::memory(jpeg.0))
+                    .await?;
+            }
+
+            select_scan_action(bot, dialogue, None, mode).await?;
+
+            Ok(())
+        })()
+        .await;
+
+        if let Err(err) = result {
             log::error!("Telegram error: {err:#}");
         }
     });
@@ -282,13 +303,69 @@ async fn scan_preview(
     Ok(())
 }
 
-async fn scan_preview_impl(
+async fn scan_first_page(
+    globals: Arc<Globals>,
+    bot: Bot,
+    dialogue: BotDialogue,
+    (dialogue_message, mode): (Message, msg::ScanMode), // From `State::ReceiveScanAction`.
+) -> anyhow::Result<()> {
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+
+    dialogue
+        .update(BotState::ScanPage {
+            cancel: Arc::new(Mutex::new(Some(cancel_tx))),
+        })
+        .await?;
+
+    tokio::spawn(async move {
+        let result: anyhow::Result<()> = (|| async {
+            let Some(jpeg) = scan(globals, &bot, &dialogue_message, cancel_rx).await? else {
+                select_scan_action(bot, dialogue, None, mode).await?;
+                return Ok(());
+            };
+
+            match mode {
+                msg::ScanMode::SinglePage => {
+                    edit_msg(&bot, &dialogue_message, msg::SINGLE_PAGE_SCAN_RESULT).await?;
+
+                    bot.send_document(
+                        dialogue_message.chat.id,
+                        InputFile::memory(jpeg.0).file_name("Страница.jpg"),
+                    )
+                    .await?;
+
+                    dialogue.update(BotState::Empty).await?;
+                }
+                msg::ScanMode::Document => {
+                    select_document_action(
+                        bot,
+                        dialogue,
+                        Some(dialogue_message),
+                        Arc::new(Mutex::new(vec![jpeg])),
+                    )
+                    .await?;
+                }
+            }
+
+            Ok(())
+        })()
+        .await;
+
+        if let Err(err) = result {
+            log::error!("Telegram error: {err:#}");
+        }
+    });
+
+    Ok(())
+}
+
+async fn scan(
     globals: Arc<Globals>,
     bot: &Bot,
     message: &Message,
     cancel: oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
-    let cancel_button = buttons_to_inline_keyboard(&msg::SCAN_CANCEL);
+) -> anyhow::Result<Option<Jpeg>> {
+    let cancel_button = buttons_to_inline_keyboard(&*msg::SCAN_CANCEL);
 
     let mut state_receiver = scan::start(globals.config.clone(), cancel);
     while let Some(state) = state_receiver.recv().await {
@@ -300,10 +377,7 @@ async fn scan_preview_impl(
                 edit_interative(&bot, &message, &msg::SCAN_PROGRESS(p), &cancel_button).await?;
             }
             ScanState::Done(jpeg) => {
-                edit_msg(&bot, &message, msg::SCAN_PREVIEW_DONE).await?;
-
-                bot.send_photo(message.chat.id, InputFile::memory(jpeg.0))
-                    .await?;
+                return Ok(Some(jpeg));
             }
             ScanState::Error(err) => {
                 log::error!("Ошибка сканирования: {err:#}");
@@ -315,12 +389,12 @@ async fn scan_preview_impl(
         };
     }
 
-    Ok(())
+    Ok(None)
 }
 
-async fn receive_scan_preview_cancellation(
+async fn receive_scan_cancellation(
     q: CallbackQuery,
-    (_, cancel): (Message, ScanCancellationToken), // From `State::ScanPreview`.
+    cancel: ScanCancellationToken, // From `State::ScanPage`.
 ) -> anyhow::Result<()> {
     if q.data.is_none() {
         return Ok(());
@@ -331,6 +405,72 @@ async fn receive_scan_preview_cancellation(
     };
 
     _ = cancel.send(());
+
+    Ok(())
+}
+
+async fn select_document_action(
+    bot: Bot,
+    dialogue: BotDialogue,
+    dialogue_message: Option<Message>,
+    pages: Arc<Mutex<Vec<Jpeg>>>,
+) -> anyhow::Result<()> {
+    let actions = msg::buttons_to_inline_keyboard(&*msg::MULTIPAGE_SCAN_ACTIONS_BUTTONS);
+
+    let dialogue_message = if let Some(dialogue_message) = dialogue_message {
+        let pages_count = pages.lock().await.len();
+        bot.edit_message_text(
+            dialogue_message.chat.id,
+            dialogue_message.id,
+            msg::MULTIPAGE_SELECT_SCAN_ACTION(pages_count),
+        )
+        .reply_markup(actions)
+        .await?
+    } else {
+        bot.send_message(dialogue.chat_id(), msg::SELECT_SCAN_ACTION)
+            .reply_markup(actions)
+            .await?
+    };
+
+    dialogue
+        .update(BotState::ReceiveMultipageScanAction {
+            dialogue_message,
+            pages,
+        })
+        .await?;
+
+    Ok(())
+}
+
+async fn receive_multipage_scan_action_selection(
+    globals: Arc<Globals>,
+    bot: Bot,
+    dialogue: BotDialogue,
+    q: CallbackQuery,
+    (dialogue_message, pages): (Message, Pages), // From `State::ReceiveMultipageScanAction`.
+) -> anyhow::Result<()> {
+    let Some(action) = q.data else {
+        return Ok(());
+    };
+
+    let Ok(action) = msg::ScanAction::from_str(&action) else {
+        panic!("Invalid scan action '{action}'");
+    };
+
+    match action {
+        msg::ScanAction::Done => {
+            // Make PDF from pages
+        }
+        msg::ScanAction::Scan => {
+            // Scan page and add to pages
+        }
+        msg::ScanAction::Preview => {
+            // Scan preview, send and show actions message again
+        }
+        msg::ScanAction::Cancel => {
+            // Ask confirmation for cancel
+        }
+    }
 
     Ok(())
 }
