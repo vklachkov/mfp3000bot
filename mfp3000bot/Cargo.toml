@@ -6,13 +6,15 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.79"
 argh = "0.1.12"
+base64 = "0.22.0"
 bstr = { version = "1.9.0", features = ["serde"] }
 cstr = "0.2.11"
 image = "0.24.8"
+iter-read = "1.0.1"
 lazy_static = "1.4.0"
 log = "0.4.20"
 once_cell = "1.19.0"
-printpdf = { version = "0.7.0", default_features = false }
+printpdf = { version = "0.7.0", default-features = false }
 reqwest = { version = "0.11.23", features = ["blocking"] }
 serde = { version = "1.0.196", features = ["derive"] }
 simple-cups = { version = "1.0.0", path = "../simple-cups" }
