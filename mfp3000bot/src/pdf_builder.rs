@@ -1,5 +1,5 @@
 use crate::scan::Jpeg;
-use ::image::{codecs::jpeg::JpegDecoder, DynamicImage};
+use ::image::{codecs::jpeg::JpegDecoder, ColorType, ImageDecoder};
 use printpdf::*;
 use std::io;
 
@@ -17,18 +17,20 @@ impl PdfBuilder {
     }
 
     pub fn add_image(&self, image: Jpeg) -> io::Result<()> {
-        let jpeg_decoder = JpegDecoder::new(io::Cursor::new(image.0))
+        let jpeg_decoder = JpegDecoder::new(io::Cursor::new(&image.0))
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
 
-        let image = DynamicImage::from_decoder(jpeg_decoder)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+        let dimensions = jpeg_decoder.dimensions();
+        let width = Px(dimensions.0 as usize);
+        let height = Px(dimensions.1 as usize);
 
-        self.add_dynamic_image(image)
-    }
-
-    fn add_dynamic_image(&self, image: DynamicImage) -> io::Result<()> {
-        let width = Px(image.width() as usize);
-        let height = Px(image.height() as usize);
+        let (color_space, bits_per_component) = match jpeg_decoder.color_type() {
+            ColorType::Rgb8 => (ColorSpace::Rgb, ColorBits::Bit8),
+            ColorType::Rgba8 => (ColorSpace::Rgba, ColorBits::Bit8),
+            ColorType::Rgb16 => (ColorSpace::Rgb, ColorBits::Bit16),
+            ColorType::Rgba16 => (ColorSpace::Rgba, ColorBits::Bit16),
+            _ => return Err(io::ErrorKind::Unsupported.into()),
+        };
 
         let (page, layer) = self.doc.add_page(
             Mm::from(width.into_pt(self.dpi)),
@@ -36,22 +38,14 @@ impl PdfBuilder {
             "Image Layer",
         );
 
-        let (color_space, bits_per_component) = match image {
-            DynamicImage::ImageRgb8(_) => (ColorSpace::Rgb, ColorBits::Bit8),
-            DynamicImage::ImageRgba8(_) => (ColorSpace::Rgba, ColorBits::Bit8),
-            DynamicImage::ImageRgb16(_) => (ColorSpace::Rgb, ColorBits::Bit16),
-            DynamicImage::ImageRgba16(_) => (ColorSpace::Rgba, ColorBits::Bit16),
-            _ => return Err(io::ErrorKind::Unsupported.into()),
-        };
-
         Image::from(ImageXObject {
             width,
             height,
             color_space,
             bits_per_component,
             interpolate: false,
-            image_data: image.into_bytes(),
-            image_filter: None,
+            image_data: image.0,
+            image_filter: Some(ImageFilter::DCT),
             smask: None,
             clipping_bbox: None,
         })
