@@ -1,7 +1,7 @@
 mod bot;
 mod bot_data;
 mod config;
-// mod pdf_builder;
+mod pdf_builder;
 mod print;
 mod scan;
 

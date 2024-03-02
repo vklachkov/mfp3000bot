@@ -1,4 +1,5 @@
-use ::image::DynamicImage;
+use crate::scan::Jpeg;
+use ::image::{codecs::jpeg::JpegDecoder, DynamicImage};
 use printpdf::*;
 use std::io;
 
@@ -15,7 +16,17 @@ impl PdfBuilder {
         }
     }
 
-    pub fn add_image(&self, image: DynamicImage) -> io::Result<()> {
+    pub fn add_image(&self, image: Jpeg) -> io::Result<()> {
+        let jpeg_decoder = JpegDecoder::new(io::Cursor::new(image.0))
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+
+        let image = DynamicImage::from_decoder(jpeg_decoder)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+
+        self.add_dynamic_image(image)
+    }
+
+    fn add_dynamic_image(&self, image: DynamicImage) -> io::Result<()> {
         let width = Px(image.width() as usize);
         let height = Px(image.height() as usize);
 

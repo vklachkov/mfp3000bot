@@ -49,7 +49,7 @@ pub static MULTIPAGE_SCAN_ACTIONS_BUTTONS: Lazy<[(&str, (usize, &str)); 4]> = La
         (ScanAction::Cancel.into(), (0, "⛔ Прервать сканирование")),
         (ScanAction::Scan.into(), (1, "🚀 Добавить страницу")),
         (ScanAction::Preview.into(), (1, "👀 Превью страницы")),
-        (ScanAction::Cancel.into(), (2, "📥 Завершить")),
+        (ScanAction::Done.into(), (2, "📥 Завершить")),
     ]
 });
 
@@ -72,28 +72,44 @@ pub const SINGLE_PAGE_SCAN_RESULT: &str = "Отсканированная стр
 
 pub const SCAN_ERROR: &str = "Ошибка сканирования";
 
+pub const SCAN_PREPARE_PDF: &str = "Подготовка PDF документа...";
+
+pub const MULTIPAGE_SCAN_RESULT: &str = "Отсканированный документ:";
+
 #[rustfmt::skip]
 pub static SCAN_CANCEL: Lazy<[(&str, (usize, &str)); 1]> = Lazy::new(|| {
     [
-        (ScanAction::Cancel.into(), (0, "⛔ Прервать сканирование")),
+        (ScanCancel::Forget.into(), (0, "⛔ Прервать сканирование")),
     ]
 });
 
-pub const SCAN_CANCELLED: &str = "😔 Сканирование отменено";
+pub const SCAN_CANCELLED: &str = "👍 Сканирование отменено";
+
+pub const SCAN_CANCEL_CONFIRMATION: &str = "⚠️ Отменить сканирование и удалить документ?";
+
+#[rustfmt::skip]
+pub static SCAN_CANCEL_CONFIRM_BUTTONS: Lazy<[(&str, (usize, &str)); 2]> = Lazy::new(|| {
+    [
+        (ScanCancel::Forget.into(), (0, "🗑️ Да")),
+        (ScanCancel::Cancel.into(), (0, "↩️ Нет")),
+    ]
+});
+
+#[derive(Clone, Copy, strum::Display, strum::IntoStaticStr, strum::EnumString)]
+pub enum ScanCancel {
+    Forget,
+    Cancel,
+}
 
 pub const UNIMPLEMENTED: &str = "🥺 Простите, эта функция ещё не реализована!";
 
 pub const INVALID_STATE: &str = "🐞 Вы нашли баг! Бот находится в некорректном состоянии";
 
 pub fn buttons_to_inline_keyboard(buttons: &[(&str, (usize, &str))]) -> InlineKeyboardMarkup {
-    let k = InlineKeyboardMarkup::new((0..buttons.len()).map(|idx| {
+    InlineKeyboardMarkup::new((0..buttons.len()).map(|idx| {
         buttons
             .iter()
             .filter(move |(_, (row, _))| *row == idx)
             .map(|(id, (_, text))| InlineKeyboardButton::callback(*text, *id))
-    }));
-
-    println!("КНОПКИ {k:?}");
-
-    k
+    }))
 }

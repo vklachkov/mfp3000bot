@@ -1,11 +1,12 @@
 use crate::{
     bot_data::{self as msg, buttons_to_inline_keyboard},
     config::Config,
+    pdf_builder::PdfBuilder,
     print,
     scan::{self, Jpeg, ScanState},
 };
 use reqwest::Url;
-use std::{str::FromStr, sync::Arc};
+use std::{io, mem, str::FromStr, sync::Arc};
 use teloxide::{
     dispatching::{
         dialogue::{self, InMemStorage},
@@ -41,6 +42,11 @@ pub enum BotState {
     },
 
     ReceiveMultipageScanAction {
+        dialogue_message: Message,
+        pages: Pages,
+    },
+
+    ReceiveMultipageScanCancelConfirmation {
         dialogue_message: Message,
         pages: Pages,
     },
@@ -108,7 +114,13 @@ fn schema() -> UpdateHandler<anyhow::Error> {
             .endpoint(receive_multipage_scan_action_selection),
         )
         .branch(case![BotState::ScanPage { cancel }].endpoint(receive_scan_cancellation))
-        .branch(dptree::endpoint(unknown_request));
+        .branch(
+            case![BotState::ReceiveMultipageScanCancelConfirmation {
+                dialogue_message,
+                pages
+            }]
+            .endpoint(receive_scan_cancel_confirmation),
+        );
 
     dialogue::enter::<Update, InMemStorage<BotState>, BotState, _>()
         .branch(message_handler)
@@ -252,7 +264,7 @@ async fn receive_first_scan_action_selection(
             scan_first_page(globals, bot, dialogue, (dialogue_message, mode)).await?;
         }
         msg::ScanAction::Preview => {
-            scan_preview(globals, bot, dialogue, (dialogue_message, mode)).await?;
+            scan_first_page_preview(globals, bot, dialogue, (dialogue_message, mode)).await?;
         }
         msg::ScanAction::Cancel => {
             edit_msg(&bot, &dialogue_message, msg::SCAN_CANCELLED).await?;
@@ -264,7 +276,7 @@ async fn receive_first_scan_action_selection(
     Ok(())
 }
 
-async fn scan_preview(
+async fn scan_first_page_preview(
     globals: Arc<Globals>,
     bot: Bot,
     dialogue: BotDialogue,
@@ -280,6 +292,7 @@ async fn scan_preview(
 
     tokio::spawn(async move {
         let result: anyhow::Result<()> = (|| async {
+            // TODO: Scan real preview
             let jpeg = scan(globals, &bot, &dialogue_message, cancel_rx).await?;
 
             if let Some(jpeg) = jpeg {
@@ -459,16 +472,185 @@ async fn receive_multipage_scan_action_selection(
 
     match action {
         msg::ScanAction::Done => {
-            // Make PDF from pages
+            make_pdf(bot, dialogue, dialogue_message, pages).await?;
         }
         msg::ScanAction::Scan => {
-            // Scan page and add to pages
+            scan_next_page(globals, bot, dialogue, (dialogue_message, pages)).await?;
         }
         msg::ScanAction::Preview => {
-            // Scan preview, send and show actions message again
+            scan_page_preview(globals, bot, dialogue, (dialogue_message, pages)).await?;
         }
         msg::ScanAction::Cancel => {
-            // Ask confirmation for cancel
+            ask_scan_cancel_confirmation(bot, dialogue, (dialogue_message, pages)).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn scan_page_preview(
+    globals: Arc<Globals>,
+    bot: Bot,
+    dialogue: BotDialogue,
+    (dialogue_message, pages): (Message, Pages), // From `State::ReceiveMultipageScanAction`.
+) -> anyhow::Result<()> {
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+
+    dialogue
+        .update(BotState::ScanPage {
+            cancel: Arc::new(Mutex::new(Some(cancel_tx))),
+        })
+        .await?;
+
+    tokio::spawn(async move {
+        let result: anyhow::Result<()> = (|| async {
+            // TODO: Scan real preview
+            let jpeg = scan(globals, &bot, &dialogue_message, cancel_rx).await?;
+
+            if let Some(jpeg) = jpeg {
+                edit_msg(&bot, &dialogue_message, msg::SCAN_PREVIEW_DONE).await?;
+
+                bot.send_photo(dialogue_message.chat.id, InputFile::memory(jpeg.0))
+                    .await?;
+            }
+
+            select_document_action(bot, dialogue, None, pages).await?;
+
+            Ok(())
+        })()
+        .await;
+
+        if let Err(err) = result {
+            log::error!("Telegram error: {err:#}");
+        }
+    });
+
+    Ok(())
+}
+
+async fn scan_next_page(
+    globals: Arc<Globals>,
+    bot: Bot,
+    dialogue: BotDialogue,
+    (dialogue_message, pages): (Message, Pages), // From `State::ReceiveMultipageScanAction`.
+) -> anyhow::Result<()> {
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+
+    dialogue
+        .update(BotState::ScanPage {
+            cancel: Arc::new(Mutex::new(Some(cancel_tx))),
+        })
+        .await?;
+
+    tokio::spawn(async move {
+        let result: anyhow::Result<()> = (|| async {
+            let jpeg = scan(globals, &bot, &dialogue_message, cancel_rx).await?;
+
+            if let Some(jpeg) = jpeg {
+                pages.lock().await.push(jpeg);
+            }
+
+            select_document_action(bot, dialogue, Some(dialogue_message), pages).await?;
+
+            Ok(())
+        })()
+        .await;
+
+        if let Err(err) = result {
+            log::error!("Telegram error: {err:#}");
+        }
+    });
+
+    Ok(())
+}
+
+async fn make_pdf(
+    bot: Bot,
+    dialogue: BotDialogue,
+    dialogue_message: Message,
+    pages: Arc<Mutex<Vec<Jpeg>>>,
+) -> anyhow::Result<()> {
+    edit_msg(&bot, &dialogue_message, msg::SCAN_PREPARE_PDF).await?;
+
+    let pages = mem::take(&mut *pages.lock().await);
+    let pdf = tokio::task::spawn_blocking(|| convert_pages_to_document(pages))
+        .await
+        .unwrap();
+
+    edit_msg(&bot, &dialogue_message, msg::MULTIPAGE_SCAN_RESULT).await?;
+
+    bot.send_document(
+        dialogue_message.chat.id,
+        InputFile::memory(pdf).file_name("Документ.pdf"),
+    )
+    .await?;
+
+    dialogue.update(BotState::Empty).await?;
+
+    Ok(())
+}
+
+fn convert_pages_to_document(pages: Vec<Jpeg>) -> Vec<u8> {
+    // TODO: Remove hardcoded dpi
+    let pdf_builder = PdfBuilder::new("Document", 300.0);
+
+    for page in pages {
+        pdf_builder.add_image(page).unwrap();
+    }
+
+    let mut pdf = Vec::new();
+    pdf_builder
+        .write_to(&mut io::BufWriter::with_capacity(128 * 1024, &mut pdf))
+        .unwrap();
+
+    pdf
+}
+
+async fn ask_scan_cancel_confirmation(
+    bot: Bot,
+    dialogue: BotDialogue,
+    (dialogue_message, pages): (Message, Pages), // From `State::ReceiveMultipageScanAction`.
+) -> anyhow::Result<()> {
+    let buttons = msg::buttons_to_inline_keyboard(&*msg::SCAN_CANCEL_CONFIRM_BUTTONS);
+    edit_interative(
+        &bot,
+        &dialogue_message,
+        msg::SCAN_CANCEL_CONFIRMATION,
+        &buttons,
+    )
+    .await?;
+
+    dialogue
+        .update(BotState::ReceiveMultipageScanCancelConfirmation {
+            dialogue_message,
+            pages,
+        })
+        .await?;
+
+    Ok(())
+}
+
+async fn receive_scan_cancel_confirmation(
+    bot: Bot,
+    dialogue: BotDialogue,
+    q: CallbackQuery,
+    (dialogue_message, pages): (Message, Pages), // From `State::ReceiveMultipageScanCancelConfirmation`.
+) -> anyhow::Result<()> {
+    let Some(answer) = q.data else {
+        return Ok(());
+    };
+
+    let Ok(answer) = msg::ScanCancel::from_str(&answer) else {
+        panic!("Invalid scan mode '{answer}'");
+    };
+
+    match answer {
+        msg::ScanCancel::Forget => {
+            edit_msg(&bot, &dialogue_message, msg::SCAN_CANCELLED).await?;
+            dialogue.update(BotState::Empty).await?;
+        }
+        msg::ScanCancel::Cancel => {
+            select_document_action(bot, dialogue, Some(dialogue_message), pages).await?;
         }
     }
 
@@ -488,19 +670,6 @@ async fn unknown_request(bot: Bot, dialogue: BotDialogue) -> anyhow::Result<()> 
 
 pub async fn send_msg(bot: &Bot, chat_id: ChatId, text: &str) -> anyhow::Result<()> {
     bot.send_message(chat_id, text).await?;
-    Ok(())
-}
-
-pub async fn send_interative(
-    bot: &Bot,
-    chat_id: ChatId,
-    text: &str,
-    buttons: &InlineKeyboardMarkup,
-) -> anyhow::Result<()> {
-    bot.send_message(chat_id, text)
-        .reply_markup(buttons.to_owned())
-        .await?;
-
     Ok(())
 }
 
