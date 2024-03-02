@@ -1,6 +1,9 @@
 use once_cell::sync::Lazy;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
+pub const UNALLOWED_USER: &str =
+    "👀 У вас нет доступа к этому Telegram боту. Обратитесь к администратору для получения доступа";
+
 pub const PRINT_COMMAND_TEXT: &str =
     "🖨️ Для печати документа просто отправьте PDF или DOCX файл в этот чат!";
 

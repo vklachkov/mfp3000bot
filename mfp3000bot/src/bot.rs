@@ -90,6 +90,7 @@ fn schema() -> UpdateHandler<anyhow::Error> {
         .endpoint(unknown_request);
 
     let message_handler = Update::filter_message()
+        .filter_async(filter_unknown_users)
         .branch(command_handler)
         .branch(dptree::filter(|msg: Message| msg.document().is_some()).endpoint(print_doc))
         .branch(dptree::endpoint(unknown_request));
@@ -125,6 +126,20 @@ fn schema() -> UpdateHandler<anyhow::Error> {
     dialogue::enter::<Update, InMemStorage<BotState>, BotState, _>()
         .branch(message_handler)
         .branch(callback_query_handler)
+}
+
+async fn filter_unknown_users(globals: Arc<Globals>, bot: Bot, message: Message) -> bool {
+    let Some(username) = message.from().and_then(|from| from.username.as_ref()) else {
+        return false;
+    };
+
+    let allow = globals.config.telegram.allowed_users.contains(&username);
+    if !allow {
+        log::info!("Unallowed user {username} is trying to access bot");
+        _ = bot.send_message(message.chat.id, msg::UNALLOWED_USER).await;
+    }
+
+    allow
 }
 
 async fn print_hint(bot: Bot, msg: Message) -> anyhow::Result<()> {

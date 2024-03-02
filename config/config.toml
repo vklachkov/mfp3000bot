@@ -1,5 +1,6 @@
 [telegram]
 token = "XXXXX"
+allowed_users = []
 
 [devices]
 # printer = ""

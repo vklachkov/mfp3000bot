@@ -13,6 +13,7 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Telegram {
     pub token: String,
+    pub allowed_users: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
