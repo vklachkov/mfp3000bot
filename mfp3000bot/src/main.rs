@@ -7,7 +7,6 @@ mod scan;
 
 use argh::FromArgs;
 use config::Config;
-use log::Level;
 use std::{path::PathBuf, process};
 
 #[derive(FromArgs)]
@@ -40,14 +39,19 @@ async fn main() {
 }
 
 fn setup_logger(args: &Args) {
-    simple_logger::init_with_level(if args.trace {
-        Level::Trace
+    let level = if args.trace {
+        log::LevelFilter::Trace
     } else if args.verbose {
-        Level::Debug
+        log::LevelFilter::Debug
     } else {
-        Level::Info
-    })
-    .unwrap();
+        log::LevelFilter::Info
+    };
+
+    simple_logger::SimpleLogger::new()
+        .with_module_level("reqwest", log::LevelFilter::Off)
+        .with_level(level)
+        .init()
+        .unwrap()
 }
 
 fn hello(args: &Args) {
