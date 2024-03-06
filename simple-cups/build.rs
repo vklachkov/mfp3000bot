@@ -8,13 +8,14 @@ fn main() {
 }
 
 fn bindgen_cups() {
-    println!("cargo:rustc-link-lib=cups");
+    println!("cargo:rustc-link-lib=dylib=cups");
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let bindings_path = PathBuf::from(out_dir).join("bindings.rs");
 
     bindgen::builder()
         .header("ffi/wrapper.h")
+        .clang_arg("-I/usr/include/cups")
         .generate()
         .expect("Failed to generate bindings")
         .write_to_file(&bindings_path)
