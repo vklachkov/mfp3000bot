@@ -15,7 +15,6 @@ fn bindgen_sane() {
 
     bindgen::builder()
         .header("ffi/wrapper.h")
-        .clang_arg("-I/usr/include/sane")
         .generate()
         .expect("Failed to generate bindings")
         .write_to_file(&bindings_path)

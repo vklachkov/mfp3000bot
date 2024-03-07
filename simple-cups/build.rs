@@ -15,7 +15,6 @@ fn bindgen_cups() {
 
     bindgen::builder()
         .header("ffi/wrapper.h")
-        .clang_arg("-I/usr/include/cups")
         .generate()
         .expect("Failed to generate bindings")
         .write_to_file(&bindings_path)

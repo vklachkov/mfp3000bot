@@ -1,2 +1,1 @@
-// #include <sane/sane.h>
-#include "sane.h"
+#include <sane/sane.h>

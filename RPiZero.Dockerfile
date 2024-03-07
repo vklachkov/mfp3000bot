@@ -10,12 +10,18 @@ RUN rustup target add arm-unknown-linux-gnueabi
 
 # Install tools
 RUN apt-get update && apt-get install -y \
-    build-essential libclang-dev
+    pkg-config libclang-dev crossbuild-essential-armel
 
 # Install dependencies for ARMv6
 RUN dpkg --add-architecture armel
-RUN apt-get update && apt-get install -y \
-    crossbuild-essential-armel libcups2-dev:armel libsane-dev:armel libssl-dev:armel
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl-dev:armel libcups2-dev:armel libsane-dev:armel
+
+# Setup env vars for cross compilation
+ENV PKG_CONFIG_PATH="/usr/lib/arm-linux-gnueabi/pkgconfig"
+ENV PKG_CONFIG_ALLOW_CROSS=1
+
+ENV BINDGEN_EXTRA_CLANG_ARGS_arm_unknown_linux_gnueabihf="-I/usr/include"
 
 # Build
 RUN mkdir -p /src
