@@ -135,6 +135,11 @@ fn scan_page(
             break;
         }
 
+        log::trace!(
+            "Scan progress {page_offset} of {page_size} bytes ({}%)",
+            (page_offset as f64 / page_size as f64 * 100.)
+        );
+
         let progress = (page_offset as f64 / page_size as f64 * 100.).round() as u8;
         if progress - previous_progress >= 5 {
             send_state!(ScanState::Progress(progress));
@@ -240,6 +245,8 @@ fn validate_parameters(parameters: Parameters) -> anyhow::Result<()> {
 }
 
 fn encode_jpeg(image: DynamicImage, output_quality: u8) -> Jpeg {
+    log::trace!("Start jpeg encoding");
+
     let mut buffer = Vec::new();
     image
         .write_to(
@@ -247,6 +254,8 @@ fn encode_jpeg(image: DynamicImage, output_quality: u8) -> Jpeg {
             ImageOutputFormat::Jpeg(output_quality),
         )
         .unwrap();
+
+    log::trace!("End jpeg encoding");
 
     Jpeg(buffer)
 }

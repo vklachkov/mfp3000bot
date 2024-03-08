@@ -356,11 +356,15 @@ async fn scan_first_page(
                 msg::ScanMode::SinglePage => {
                     edit_msg(&bot, &dialogue_message, msg::SINGLE_PAGE_SCAN_RESULT).await?;
 
+                    log::trace!("Send image to telegram");
+
                     bot.send_document(
                         dialogue_message.chat.id,
                         InputFile::memory(jpeg.0).file_name("Страница.jpg"),
                     )
                     .await?;
+
+                    log::trace!("Image successfully sended to telegram");
 
                     dialogue.update(BotState::Empty).await?;
                 }
