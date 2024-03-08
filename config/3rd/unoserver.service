@@ -1,0 +1,15 @@
+[Unit]
+Description=Universal Office Converter - Convert between any document format supported by LibreOffice/OpenOffice
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=1s
+RestartSec=1
+User=root
+ExecStart=/usr/local/bin/unoserver
+
+[Install]
+WantedBy=multi-user.target

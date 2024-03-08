@@ -1,0 +1,14 @@
+[Unit]
+Description=Telegram bot for printing and scanning
+After=network-online.target unoservice.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=1s
+User=root
+ExecStart=/usr/local/bin/unoserver
+
+[Install]
+WantedBy=multi-user.target
