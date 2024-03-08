@@ -73,7 +73,7 @@ pub const SCAN_PREVIEW_DONE: &str = "Превью страницы:";
 
 pub const SINGLE_PAGE_SCAN_RESULT: &str = "Отсканированная страница:";
 
-pub const SCAN_ERROR: &str = "Ошибка сканирования";
+pub const SCAN_ERROR: &str = "⚠️ Ошибка сканирования";
 
 pub const SCAN_PREPARE_PDF: &str = "Подготовка PDF документа...";
 
