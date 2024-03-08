@@ -6,7 +6,10 @@ use std::{collections::HashMap, fs, path::Path};
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub telegram: Telegram,
+
     pub devices: Devices,
+
+    #[serde(default = "Default::default")]
     pub scanner: HashMap<String, HashMap<BString, BString>>,
 }
 
