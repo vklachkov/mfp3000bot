@@ -16,7 +16,7 @@ lazy_static! {
 
 pub enum ScanState {
     Prepair,
-    Progress(u8),
+    Progress(f64),
     Done(Jpeg),
     Error(anyhow::Error),
     Cancelled,
@@ -116,9 +116,9 @@ fn scan_page(
     let mut page = vec![0u8; page_size];
     let mut page_offset = 0;
 
-    send_state!(ScanState::Progress(0));
+    send_state!(ScanState::Progress(0.0));
 
-    let mut previous_progress = 0;
+    let mut previous_progress = 0.0;
     loop {
         const WINDOW_SIZE: usize = 128 * 1024;
 
@@ -140,14 +140,16 @@ fn scan_page(
             (page_offset as f64 / page_size as f64 * 100.)
         );
 
-        let progress = (page_offset as f64 / page_size as f64 * 100.).round() as u8;
-        if progress - previous_progress >= 5 {
+        let progress = page_offset as f64 / page_size as f64 * 100.;
+        if progress - previous_progress >= 5.0 {
             send_state!(ScanState::Progress(progress));
             previous_progress = progress;
         }
 
         page_offset += read;
     }
+
+    send_state!(ScanState::Progress(100.0));
 
     check_cancellation!(cancel);
 
