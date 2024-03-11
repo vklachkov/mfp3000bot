@@ -56,12 +56,18 @@ fn setup_logger(args: &Args) {
 
 fn hello(args: &Args) {
     log::info!(
-        "{bin} version {version}, commit {commit}, config from {config_path}, verbose {verbose}",
+        "{bin} version {version}, commit {commit}, config from {config_path}, {verbose}",
         bin = env!("CARGO_PKG_NAME"),
         version = env!("CARGO_PKG_VERSION"),
         commit = env!("GIT_COMMIT_HASH"),
         config_path = args.config.display(),
-        verbose = if args.verbose { "on" } else { "off" },
+        verbose = if args.trace {
+            "trace enabled"
+        } else if args.verbose {
+            "verbose enabled"
+        } else {
+            "additional logs disabled"
+        },
     );
 }
 
