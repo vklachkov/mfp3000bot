@@ -1,10 +1,13 @@
 use std::process::Command;
 
 fn main() {
-    let output = Command::new("git")
+    let Ok(output) = Command::new("git")
         .args(&["rev-parse", "--short", "HEAD"])
         .output()
-        .expect("git rev-parse should be successful");
+    else {
+        println!("cargo:rustc-env=GIT_COMMIT_HASH=unknown");
+        return;
+    };
 
     let git_hash = String::from_utf8(output.stdout).expect("git output should be valid UTF-8");
 
