@@ -9,7 +9,11 @@ fn main() {
         return;
     };
 
-    let git_hash = String::from_utf8(output.stdout).expect("git output should be valid UTF-8");
-
-    println!("cargo:rustc-env=GIT_COMMIT_HASH={git_hash}");
+    if !output.stdout.is_empty() {
+        let hash = std::str::from_utf8(&output.stdout).unwrap();
+        println!("cargo:rustc-env=GIT_COMMIT_HASH={hash}");
+    } else {
+        let error = std::str::from_utf8(&output.stderr).unwrap();
+        panic!("Git error: {error}");
+    }
 }
