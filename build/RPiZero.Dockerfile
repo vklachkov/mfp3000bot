@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 # Install dependencies for ARMv6
 RUN dpkg --add-architecture armel
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl-dev:armel libcups2-dev:armel libsane-dev:armel
+    libssl-dev:armel libcups2-dev:armel libsane-dev:armel libjpeg62-turbo:armel
 
 # Setup env vars for cross compilation
 ENV PKG_CONFIG_PATH="/usr/lib/arm-linux-gnueabi/pkgconfig"

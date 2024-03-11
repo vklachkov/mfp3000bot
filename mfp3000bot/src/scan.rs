@@ -1,13 +1,9 @@
 use crate::config::Config;
 use anyhow::{anyhow, bail, Context};
 use bstr::ByteSlice;
-use image::{DynamicImage, ImageOutputFormat};
 use lazy_static::lazy_static;
 use simple_sane::{Backend, FrameFormat, OptionValue, Parameters, Scanner};
-use std::{
-    io::{self, Read},
-    thread,
-};
+use std::{io::Read, thread};
 use tokio::sync::{mpsc, oneshot};
 
 lazy_static! {
@@ -22,7 +18,17 @@ pub enum ScanState {
     Cancelled,
 }
 
-pub struct Jpeg(pub Vec<u8>);
+pub struct Jpeg {
+    pub bytes: Vec<u8>,
+    pub format: JpegFormat,
+    pub width: usize,
+    pub height: usize,
+}
+
+pub enum JpegFormat {
+    RGB,
+    Gray,
+}
 
 pub fn start(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
     let (mut state_tx, state_rx) = mpsc::channel(4);
@@ -32,9 +38,9 @@ pub fn start(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receive
         .spawn(move || {
             match scan_page(config, &mut state_tx, &mut cancel) {
                 Ok(Some((parameters, bytes))) => {
-                    match raw_to_dynamic_image(parameters, bytes) {
-                        Ok(image) => {
-                            let jpeg = encode_jpeg(image, 75);
+                    match raw_image(parameters, bytes) {
+                        Ok(raw_image) => {
+                            let jpeg = encode_jpeg(raw_image, 70);
                             _ = state_tx.blocking_send(ScanState::Done(jpeg))
                         }
                         Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
@@ -204,60 +210,38 @@ fn setup_scanner(scanner: &mut Scanner<'_>, config: &Config) {
     }
 }
 
-fn raw_to_dynamic_image(parameters: Parameters, raw: Vec<u8>) -> anyhow::Result<DynamicImage> {
-    use image::{GrayImage, RgbImage};
+fn raw_image(parameters: Parameters, pixels: Vec<u8>) -> anyhow::Result<libjpeg::RawImage> {
+    let width = parameters.pixels_per_line;
+    let height = parameters.lines;
 
-    validate_parameters(parameters)?;
-
-    let width = parameters.pixels_per_line as u32;
-    let height = parameters.lines as u32;
-
-    let image = match parameters.format {
-        FrameFormat::Gray => DynamicImage::from(
-            GrayImage::from_raw(width, height, raw)
-                .context("creating image from scanner buffer")?,
-        ),
-        FrameFormat::RGB => DynamicImage::from(
-            RgbImage::from_raw(width, height, raw).context("creating image from scanner buffer")?,
-        ),
+    let format = match parameters.format {
+        FrameFormat::Gray => libjpeg::RawImageFormat::Gray,
+        FrameFormat::RGB => libjpeg::RawImageFormat::Rgb,
         format => bail!("unsupported image format '{format:?}'"),
     };
 
-    Ok(image)
+    Ok(libjpeg::RawImage {
+        pixels,
+        width,
+        height,
+        format,
+    })
 }
 
-fn validate_parameters(parameters: Parameters) -> anyhow::Result<()> {
-    if parameters.pixels_per_line > u32::MAX as usize {
-        bail!(
-            "parameters.pixels_per_line ({}) is bigger than u32::MAX ({})",
-            parameters.pixels_per_line,
-            u32::MAX
-        );
-    }
-
-    if parameters.lines > u32::MAX as usize {
-        bail!(
-            "parameters.lines ({}) is bigger than u32::MAX ({})",
-            parameters.pixels_per_line,
-            u32::MAX
-        );
-    }
-
-    Ok(())
-}
-
-fn encode_jpeg(image: DynamicImage, output_quality: u8) -> Jpeg {
+fn encode_jpeg(image: libjpeg::RawImage, output_quality: u8) -> Jpeg {
     log::trace!("Start jpeg encoding");
 
-    let mut buffer = Vec::new();
-    image
-        .write_to(
-            &mut io::BufWriter::with_capacity(128 * 1024, io::Cursor::new(&mut buffer)),
-            ImageOutputFormat::Jpeg(output_quality),
-        )
-        .unwrap();
+    let bytes = unsafe { libjpeg::compress_to_jpeg(&image, output_quality) };
 
     log::trace!("End jpeg encoding");
 
-    Jpeg(buffer)
+    Jpeg {
+        bytes,
+        format: match image.format {
+            libjpeg::RawImageFormat::Rgb => JpegFormat::RGB,
+            libjpeg::RawImageFormat::Gray => JpegFormat::Gray,
+        },
+        width: image.width,
+        height: image.height,
+    }
 }

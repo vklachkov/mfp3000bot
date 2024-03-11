@@ -1,5 +1,4 @@
-use crate::scan::Jpeg;
-use ::image::{codecs::jpeg::JpegDecoder, ColorType, ImageDecoder};
+use crate::scan::{Jpeg, JpegFormat};
 use printpdf::*;
 use std::io;
 
@@ -16,20 +15,14 @@ impl PdfBuilder {
         }
     }
 
-    pub fn add_image(&self, image: Jpeg) -> io::Result<()> {
-        let jpeg_decoder = JpegDecoder::new(io::Cursor::new(&image.0))
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+    pub fn add_image(&self, jpeg: Jpeg) -> io::Result<()> {
+        let width = Px(jpeg.width);
+        let height = Px(jpeg.height);
 
-        let dimensions = jpeg_decoder.dimensions();
-        let width = Px(dimensions.0 as usize);
-        let height = Px(dimensions.1 as usize);
-
-        let (color_space, bits_per_component) = match jpeg_decoder.color_type() {
-            ColorType::Rgb8 => (ColorSpace::Rgb, ColorBits::Bit8),
-            ColorType::Rgba8 => (ColorSpace::Rgba, ColorBits::Bit8),
-            ColorType::Rgb16 => (ColorSpace::Rgb, ColorBits::Bit16),
-            ColorType::Rgba16 => (ColorSpace::Rgba, ColorBits::Bit16),
-            _ => return Err(io::ErrorKind::Unsupported.into()),
+        let bits_per_component = ColorBits::Bit8;
+        let color_space = match jpeg.format {
+            JpegFormat::RGB => ColorSpace::Rgb,
+            JpegFormat::Gray => ColorSpace::Greyscale,
         };
 
         let (page, layer) = self.doc.add_page(
@@ -44,7 +37,7 @@ impl PdfBuilder {
             color_space,
             bits_per_component,
             interpolate: false,
-            image_data: image.0,
+            image_data: jpeg.bytes,
             image_filter: Some(ImageFilter::DCT),
             smask: None,
             clipping_bbox: None,

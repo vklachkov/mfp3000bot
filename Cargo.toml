@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["mfp3000bot", "simple-cups", "simple-sane"]
+members = [
+    "mfp3000bot",
+    "simple-cups",
+    "simple-sane",
+    "libjpeg",
+    "libjpeg-sys",
+]
 
 [profile.release]
 opt-level = 3

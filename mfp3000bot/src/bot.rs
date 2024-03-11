@@ -313,7 +313,7 @@ async fn scan_first_page_preview(
             if let Some(jpeg) = jpeg {
                 edit_msg(&bot, &dialogue_message, msg::SCAN_PREVIEW_DONE).await?;
 
-                bot.send_photo(dialogue_message.chat.id, InputFile::memory(jpeg.0))
+                bot.send_photo(dialogue_message.chat.id, InputFile::memory(jpeg.bytes))
                     .await?;
             }
 
@@ -360,7 +360,7 @@ async fn scan_first_page(
 
                     bot.send_document(
                         dialogue_message.chat.id,
-                        InputFile::memory(jpeg.0).file_name("Страница.jpg"),
+                        InputFile::memory(jpeg.bytes).file_name("Страница.jpg"),
                     )
                     .await?;
 
@@ -529,7 +529,7 @@ async fn scan_page_preview(
             if let Some(jpeg) = jpeg {
                 edit_msg(&bot, &dialogue_message, msg::SCAN_PREVIEW_DONE).await?;
 
-                bot.send_photo(dialogue_message.chat.id, InputFile::memory(jpeg.0))
+                bot.send_photo(dialogue_message.chat.id, InputFile::memory(jpeg.bytes))
                     .await?;
             }
 
