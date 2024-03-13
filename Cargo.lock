@@ -1113,8 +1113,7 @@ dependencies = [
 [[package]]
 name = "printpdf"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c30a4cc87c3ca9a98f4970db158a7153f8d1ec8076e005751173c57836380b1d"
+source = "git+https://github.com/fschutt/printpdf.git?rev=fbc7d69#fbc7d691f988b0d295570bee072de932f4cabda2"
 dependencies = [
  "lopdf",
  "owned_ttf_parser",
