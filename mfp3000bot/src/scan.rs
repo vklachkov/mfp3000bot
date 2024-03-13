@@ -26,7 +26,7 @@ pub struct Jpeg {
 }
 
 pub enum JpegFormat {
-    RGB,
+    Rgb,
     Gray,
 }
 
@@ -238,7 +238,7 @@ fn encode_jpeg(image: libjpeg::RawImage, output_quality: u8) -> Jpeg {
     Jpeg {
         bytes,
         format: match image.format {
-            libjpeg::RawImageFormat::Rgb => JpegFormat::RGB,
+            libjpeg::RawImageFormat::Rgb => JpegFormat::Rgb,
             libjpeg::RawImageFormat::Gray => JpegFormat::Gray,
         },
         width: image.width,

@@ -2,7 +2,7 @@ use std::process::Command;
 
 fn main() {
     let Ok(output) = Command::new("git")
-        .args(&["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short", "HEAD"])
         .output()
     else {
         println!("cargo:rustc-env=GIT_COMMIT_HASH=unknown");

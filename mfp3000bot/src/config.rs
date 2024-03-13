@@ -30,7 +30,7 @@ impl Config {
         let path = path.as_ref();
         let dpath = path.display();
 
-        let raw = fs::read_to_string(&path).with_context(|| format!("reading file '{dpath}'"))?;
+        let raw = fs::read_to_string(path).with_context(|| format!("reading file '{dpath}'"))?;
         let config = toml::from_str(&raw).with_context(|| format!("parsing file '{dpath}'"))?;
 
         Ok(config)

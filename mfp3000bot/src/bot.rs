@@ -133,7 +133,7 @@ async fn filter_unknown_users(globals: Arc<Globals>, bot: Bot, message: Message)
         return false;
     };
 
-    let allow = globals.config.telegram.allowed_users.contains(&username);
+    let allow = globals.config.telegram.allowed_users.contains(username);
     if !allow {
         log::info!("Unallowed user {username} is trying to access bot");
         _ = bot.send_message(message.chat.id, msg::UNALLOWED_USER).await;
@@ -306,7 +306,7 @@ async fn scan_first_page_preview(
         .await?;
 
     tokio::spawn(async move {
-        let result: anyhow::Result<()> = (|| async {
+        let result: anyhow::Result<()> = async {
             // TODO: Scan real preview
             let jpeg = scan(globals, &bot, &dialogue_message, cancel_rx).await?;
 
@@ -320,7 +320,7 @@ async fn scan_first_page_preview(
             select_scan_action(bot, dialogue, None, mode).await?;
 
             Ok(())
-        })()
+        }
         .await;
 
         if let Err(err) = result {
@@ -346,7 +346,7 @@ async fn scan_first_page(
         .await?;
 
     tokio::spawn(async move {
-        let result: anyhow::Result<()> = (|| async {
+        let result: anyhow::Result<()> = async {
             let Some(jpeg) = scan(globals, &bot, &dialogue_message, cancel_rx).await? else {
                 select_scan_action(bot, dialogue, None, mode).await?;
                 return Ok(());
@@ -380,7 +380,7 @@ async fn scan_first_page(
             }
 
             Ok(())
-        })()
+        }
         .await;
 
         if let Err(err) = result {
@@ -403,20 +403,20 @@ async fn scan(
     while let Some(state) = state_receiver.recv().await {
         match state {
             ScanState::Prepair => {
-                edit_interative(&bot, &message, msg::SCAN_PREPAIR, &cancel_button).await?;
+                edit_interative(bot, message, msg::SCAN_PREPAIR, &cancel_button).await?;
             }
             ScanState::Progress(p) => {
-                edit_interative(&bot, &message, &msg::SCAN_PROGRESS(p), &cancel_button).await?;
+                edit_interative(bot, message, &msg::SCAN_PROGRESS(p), &cancel_button).await?;
             }
             ScanState::Done(jpeg) => {
                 return Ok(Some(jpeg));
             }
             ScanState::Error(err) => {
                 log::error!("Ошибка сканирования: {err:#}");
-                edit_msg(&bot, &message, msg::SCAN_ERROR).await?;
+                edit_msg(bot, message, msg::SCAN_ERROR).await?;
             }
             ScanState::Cancelled => {
-                edit_msg(&bot, &message, msg::SCAN_CANCELLED).await?;
+                edit_msg(bot, message, msg::SCAN_CANCELLED).await?;
             }
         };
     }
@@ -522,7 +522,7 @@ async fn scan_page_preview(
         .await?;
 
     tokio::spawn(async move {
-        let result: anyhow::Result<()> = (|| async {
+        let result: anyhow::Result<()> = async {
             // TODO: Scan real preview
             let jpeg = scan(globals, &bot, &dialogue_message, cancel_rx).await?;
 
@@ -536,7 +536,7 @@ async fn scan_page_preview(
             select_document_action(bot, dialogue, None, pages).await?;
 
             Ok(())
-        })()
+        }
         .await;
 
         if let Err(err) = result {
@@ -562,7 +562,7 @@ async fn scan_next_page(
         .await?;
 
     tokio::spawn(async move {
-        let result: anyhow::Result<()> = (|| async {
+        let result: anyhow::Result<()> = async {
             let jpeg = scan(globals, &bot, &dialogue_message, cancel_rx).await?;
 
             if let Some(jpeg) = jpeg {
@@ -572,7 +572,7 @@ async fn scan_next_page(
             select_document_action(bot, dialogue, Some(dialogue_message), pages).await?;
 
             Ok(())
-        })()
+        }
         .await;
 
         if let Err(err) = result {

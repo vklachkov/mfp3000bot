@@ -25,7 +25,7 @@ impl Backend {
         let devices = self.get_devices()?;
 
         let devices = unsafe { slice_from_c_array::<'b>(devices) }
-            .into_iter()
+            .iter()
             .map(|device| Device::new(self, device))
             .collect();
 
@@ -39,7 +39,7 @@ impl Backend {
         let devices = self.get_devices()?;
 
         let device = unsafe { slice_from_c_array::<'b>(devices) }
-            .into_iter()
+            .iter()
             .map(|device| Device::new(self, device))
             .find(|device| device.name == BStr::new(&name));
 

@@ -53,7 +53,7 @@ pub fn print_remote_file(printer: &str, docname: &String, url: &Url) -> anyhow::
             .quality(PrintQuality::Normal)
             .copies(cstr!("1"));
 
-        printer.print_documents(&docname, options, vec![document])?;
+        printer.print_documents(docname, options, vec![document])?;
 
         Ok(())
     })
@@ -114,7 +114,7 @@ fn docx_to_pdf(mut reader: impl io::Read) -> anyhow::Result<Vec<u8>> {
     let pdf_base64 = &pdf_response.as_bytes()[pdf_base64_start_idx..pdf_base64_end_idx];
 
     // TODO: Is it fast? Check and, maybe, write custom iter read with filter based on memchr.
-    let pdf_base64_reader = IterRead::new(pdf_base64.into_iter().copied().filter(|&b| b != 10));
+    let pdf_base64_reader = IterRead::new(pdf_base64.iter().copied().filter(|&b| b != 10));
 
     let mut pdf = Vec::new();
     DecoderReader::new(pdf_base64_reader, &general_purpose::STANDARD)

@@ -21,7 +21,7 @@ impl PdfBuilder {
 
         let bits_per_component = ColorBits::Bit8;
         let color_space = match jpeg.format {
-            JpegFormat::RGB => ColorSpace::Rgb,
+            JpegFormat::Rgb => ColorSpace::Rgb,
             JpegFormat::Gray => ColorSpace::Greyscale,
         };
 

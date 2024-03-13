@@ -17,6 +17,6 @@ fn bindgen_jpeg() {
         .header("ffi/wrapper.h")
         .generate()
         .expect("Failed to generate bindings")
-        .write_to_file(&bindings_path)
+        .write_to_file(bindings_path)
         .expect("Failed to write bindings");
 }

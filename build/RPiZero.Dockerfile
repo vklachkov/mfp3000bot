@@ -21,8 +21,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PKG_CONFIG_PATH="/usr/lib/arm-linux-gnueabi/pkgconfig"
 ENV PKG_CONFIG_ALLOW_CROSS=1
 
-ENV BINDGEN_EXTRA_CLANG_ARGS_arm_unknown_linux_gnueabihf="-I/usr/include"
-
 # Build
 RUN mkdir -p /src
 RUN git config --global --add safe.directory /src

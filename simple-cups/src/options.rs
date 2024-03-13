@@ -14,10 +14,7 @@ pub struct Options {
 
 impl Options {
     pub fn new() -> Self {
-        Self {
-            inner: null_mut(),
-            count: 0,
-        }
+        Default::default()
     }
 
     pub fn media_format(mut self, format: MediaFormat) -> Self {
@@ -58,7 +55,7 @@ impl Options {
 
     pub fn slice(&self) -> &[ffi::cups_option_t] {
         if self.count == 0 {
-            return &[];
+            &[]
         } else {
             assert!(!self.inner.is_null());
             assert!(self.count > 0);
@@ -69,6 +66,15 @@ impl Options {
     pub fn into_raw(self) -> (*mut ffi::cups_option_t, c_int) {
         let this = ManuallyDrop::new(self);
         (this.inner, this.count)
+    }
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            inner: null_mut(),
+            count: 0,
+        }
     }
 }
 
