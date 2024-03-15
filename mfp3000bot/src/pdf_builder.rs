@@ -10,7 +10,15 @@ pub struct PdfBuilder {
 impl PdfBuilder {
     pub fn new(title: &str, dpi: f32) -> Self {
         Self {
-            doc: PdfDocument::empty(title),
+            doc: PdfDocument::empty(title).with_conformance(PdfConformance::Custom(
+                CustomPdfConformance {
+                    // ICC profile bloats file:
+                    // https://github.com/fschutt/printpdf/issues/174#issuecomment-2000091741
+                    requires_icc_profile: false,
+                    requires_xmp_metadata: false,
+                    ..Default::default()
+                },
+            )),
             dpi,
         }
     }
