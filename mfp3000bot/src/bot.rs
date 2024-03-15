@@ -59,6 +59,7 @@ type Pages = Arc<Mutex<Vec<Jpeg>>>;
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase")]
 enum BotCommand {
+    Start,
     Help,
     Print,
     Scan,
@@ -81,19 +82,19 @@ fn schema() -> UpdateHandler<anyhow::Error> {
     use dptree::case;
 
     let command_handler = teloxide::filter_command::<BotCommand, _>()
-        .branch(case![BotCommand::Help].endpoint(help))
         .branch(
             case![BotState::Empty]
+                .branch(case![BotCommand::Start].endpoint(hello))
+                .branch(case![BotCommand::Help].endpoint(help))
                 .branch(case![BotCommand::Print].endpoint(print_hint))
                 .branch(case![BotCommand::Scan].endpoint(start_scan)),
         )
-        .endpoint(unknown_request);
+        .endpoint(bot_busy);
 
     let message_handler = Update::filter_message()
         .filter_async(filter_unknown_users)
         .branch(command_handler)
-        .branch(dptree::filter(|msg: Message| msg.document().is_some()).endpoint(print_doc))
-        .branch(dptree::endpoint(unknown_request));
+        .branch(dptree::filter(|msg: Message| msg.document().is_some()).endpoint(print_doc));
 
     let callback_query_handler = Update::filter_callback_query()
         .branch(
@@ -676,15 +677,16 @@ async fn receive_scan_cancel_confirmation(
     Ok(())
 }
 
-async fn help(bot: Bot, msg: Message) -> anyhow::Result<()> {
-    send_msg(&bot, msg.chat.id, msg::UNIMPLEMENTED).await
+async fn hello(bot: Bot, msg: Message) -> anyhow::Result<()> {
+    send_msg(&bot, msg.chat.id, msg::HELLO_TEXT).await
 }
 
-async fn unknown_request(bot: Bot, dialogue: BotDialogue) -> anyhow::Result<()> {
-    bot.send_message(dialogue.chat_id(), msg::INVALID_STATE)
-        .await?;
+async fn help(bot: Bot, msg: Message) -> anyhow::Result<()> {
+    send_msg(&bot, msg.chat.id, msg::HELP_TEXT).await
+}
 
-    Ok(())
+async fn bot_busy(bot: Bot, msg: Message) -> anyhow::Result<()> {
+    send_msg(&bot, msg.chat.id, msg::BOT_BUSY).await
 }
 
 pub async fn send_msg(bot: &Bot, chat_id: ChatId, text: &str) -> anyhow::Result<()> {
