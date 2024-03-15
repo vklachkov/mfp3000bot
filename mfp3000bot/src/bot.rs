@@ -41,6 +41,11 @@ pub enum BotState {
         cancel: ScanCancellationToken,
     },
 
+    ReceiveSinglePageDocumentName {
+        dialogue_message: Message,
+        page: Page,
+    },
+
     ReceiveMultipageScanAction {
         dialogue_message: Message,
         pages: Pages,
@@ -50,9 +55,16 @@ pub enum BotState {
         dialogue_message: Message,
         pages: Pages,
     },
+
+    ReceiveMultipageDocumentName {
+        dialogue_message: Message,
+        pages: Pages,
+    },
 }
 
 type ScanCancellationToken = Arc<Mutex<Option<oneshot::Sender<()>>>>;
+
+type Page = Arc<Mutex<Jpeg>>;
 
 type Pages = Arc<Mutex<Vec<Jpeg>>>;
 
@@ -94,7 +106,21 @@ fn schema() -> UpdateHandler<anyhow::Error> {
     let message_handler = Update::filter_message()
         .filter_async(filter_unknown_users)
         .branch(command_handler)
-        .branch(dptree::filter(|msg: Message| msg.document().is_some()).endpoint(print_doc));
+        .branch(dptree::filter(|msg: Message| msg.document().is_some()).endpoint(print_doc))
+        .branch(
+            case![BotState::ReceiveSinglePageDocumentName {
+                dialogue_message,
+                page
+            }]
+            .endpoint(receive_single_page_name),
+        )
+        .branch(
+            case![BotState::ReceiveMultipageDocumentName {
+                dialogue_message,
+                pages
+            }]
+            .endpoint(receive_multi_page_name),
+        );
 
     let callback_query_handler = Update::filter_callback_query()
         .branch(
@@ -122,6 +148,20 @@ fn schema() -> UpdateHandler<anyhow::Error> {
                 pages
             }]
             .endpoint(receive_scan_cancel_confirmation),
+        )
+        .branch(
+            case![BotState::ReceiveSinglePageDocumentName {
+                dialogue_message,
+                page
+            }]
+            .endpoint(receive_single_page_rename_cancel),
+        )
+        .branch(
+            case![BotState::ReceiveMultipageDocumentName {
+                dialogue_message,
+                pages
+            }]
+            .endpoint(receive_multi_page_rename_cancel),
         );
 
     dialogue::enter::<Update, InMemStorage<BotState>, BotState, _>()
@@ -308,7 +348,7 @@ async fn scan_first_page_preview(
 
     tokio::spawn(async move {
         let result: anyhow::Result<()> = async {
-            // TODO: Scan real preview
+            // TODO: Change dpi for preview scan
             let jpeg = scan(globals, &bot, &dialogue_message, cancel_rx).await?;
 
             if let Some(jpeg) = jpeg {
@@ -355,19 +395,22 @@ async fn scan_first_page(
 
             match mode {
                 msg::ScanMode::SinglePage => {
-                    edit_msg(&bot, &dialogue_message, msg::SINGLE_PAGE_SCAN_RESULT).await?;
-
-                    log::trace!("Send image to telegram");
-
-                    bot.send_document(
+                    bot.edit_message_text(
                         dialogue_message.chat.id,
-                        InputFile::memory(jpeg.bytes).file_name("Страница.jpg"),
+                        dialogue_message.id,
+                        msg::RENAME_DOCUMENT,
                     )
+                    .reply_markup(msg::buttons_to_inline_keyboard(
+                        &*msg::RENAME_DOCUMENT_BUTTONS,
+                    ))
                     .await?;
 
-                    log::trace!("Image successfully sended to telegram");
-
-                    dialogue.update(BotState::Empty).await?;
+                    dialogue
+                        .update(BotState::ReceiveSinglePageDocumentName {
+                            dialogue_message,
+                            page: Arc::new(Mutex::new(jpeg)),
+                        })
+                        .await?;
                 }
                 msg::ScanMode::Document => {
                     select_document_action(
@@ -492,7 +535,22 @@ async fn receive_multipage_scan_action_selection(
 
     match action {
         msg::ScanAction::Done => {
-            make_pdf(bot, dialogue, dialogue_message, pages).await?;
+            bot.edit_message_text(
+                dialogue_message.chat.id,
+                dialogue_message.id,
+                msg::RENAME_DOCUMENT,
+            )
+            .reply_markup(msg::buttons_to_inline_keyboard(
+                &*msg::RENAME_DOCUMENT_BUTTONS,
+            ))
+            .await?;
+
+            dialogue
+                .update(BotState::ReceiveMultipageDocumentName {
+                    dialogue_message,
+                    pages,
+                })
+                .await?;
         }
         msg::ScanAction::Scan => {
             scan_next_page(globals, bot, dialogue, (dialogue_message, pages)).await?;
@@ -584,48 +642,6 @@ async fn scan_next_page(
     Ok(())
 }
 
-async fn make_pdf(
-    bot: Bot,
-    dialogue: BotDialogue,
-    dialogue_message: Message,
-    pages: Arc<Mutex<Vec<Jpeg>>>,
-) -> anyhow::Result<()> {
-    edit_msg(&bot, &dialogue_message, msg::SCAN_PREPARE_PDF).await?;
-
-    let pages = mem::take(&mut *pages.lock().await);
-    let pdf = tokio::task::spawn_blocking(|| convert_pages_to_document(pages))
-        .await
-        .unwrap();
-
-    edit_msg(&bot, &dialogue_message, msg::MULTIPAGE_SCAN_RESULT).await?;
-
-    bot.send_document(
-        dialogue_message.chat.id,
-        InputFile::memory(pdf).file_name("Документ.pdf"),
-    )
-    .await?;
-
-    dialogue.update(BotState::Empty).await?;
-
-    Ok(())
-}
-
-fn convert_pages_to_document(pages: Vec<Jpeg>) -> Vec<u8> {
-    // TODO: Remove hardcoded dpi
-    let pdf_builder = PdfBuilder::new("Document", 300.0);
-
-    for page in pages {
-        pdf_builder.add_image(page).unwrap();
-    }
-
-    let mut pdf = Vec::new();
-    pdf_builder
-        .write_to(&mut io::BufWriter::with_capacity(128 * 1024, &mut pdf))
-        .unwrap();
-
-    pdf
-}
-
 async fn ask_scan_cancel_confirmation(
     bot: Bot,
     dialogue: BotDialogue,
@@ -675,6 +691,148 @@ async fn receive_scan_cancel_confirmation(
     }
 
     Ok(())
+}
+
+async fn receive_single_page_name(
+    bot: Bot,
+    dialogue: BotDialogue,
+    msg: Message,
+    (dialogue_message, page): (Message, Page), // From `State::ReceiveSinglePageDocumentName`.
+) -> anyhow::Result<()> {
+    let Some(name) = msg.text() else {
+        return send_msg(&bot, msg.chat.id, msg::INVALID_DOCUMENT_NAME).await;
+    };
+
+    edit_msg(&bot, &dialogue_message, msg::RENAME_DOCUMENT).await?;
+
+    let page = &*page.lock().await;
+    send_single_page(&bot, dialogue_message.chat.id, None, name, page).await?;
+
+    dialogue.update(BotState::Empty).await?;
+
+    Ok(())
+}
+
+async fn receive_single_page_rename_cancel(
+    bot: Bot,
+    dialogue: BotDialogue,
+    (dialogue_message, page): (Message, Page), // From `State::ReceiveSinglePageDocumentName`.
+) -> anyhow::Result<()> {
+    let page = &*page.lock().await;
+    send_single_page(
+        &bot,
+        dialogue_message.chat.id,
+        Some(dialogue_message),
+        msg::DEFAULT_SINGLE_PAGE_NAME,
+        page,
+    )
+    .await?;
+
+    dialogue.update(BotState::Empty).await?;
+
+    Ok(())
+}
+
+async fn send_single_page(
+    bot: &Bot,
+    chat_id: ChatId,
+    dialogue_message: Option<Message>,
+    name: &str,
+    page: &Jpeg,
+) -> anyhow::Result<()> {
+    if let Some(dialogue_message) = dialogue_message {
+        edit_msg(bot, &dialogue_message, msg::SINGLE_PAGE_SCAN_RESULT).await?;
+    } else {
+        send_msg(bot, chat_id, msg::SINGLE_PAGE_SCAN_RESULT).await?;
+    }
+
+    let document = InputFile::memory(page.bytes.to_owned()).file_name(format!("{name}.jpg"));
+    bot.send_document(chat_id, document).await?;
+
+    Ok(())
+}
+
+async fn receive_multi_page_name(
+    bot: Bot,
+    dialogue: BotDialogue,
+    msg: Message,
+    (dialogue_message, pages): (Message, Pages), // From `State::ReceiveMultipageDocumentName`.
+) -> anyhow::Result<()> {
+    let Some(name) = msg.text() else {
+        return send_msg(&bot, msg.chat.id, msg::INVALID_DOCUMENT_NAME).await;
+    };
+
+    edit_msg(&bot, &dialogue_message, msg::RENAME_DOCUMENT).await?;
+
+    send_pdf(&bot, dialogue_message.chat.id, None, name, &pages).await?;
+
+    dialogue.update(BotState::Empty).await?;
+
+    Ok(())
+}
+
+async fn receive_multi_page_rename_cancel(
+    bot: Bot,
+    dialogue: BotDialogue,
+    (dialogue_message, pages): (Message, Pages), // From `State::ReceiveMultipageDocumentName`.
+) -> anyhow::Result<()> {
+    send_pdf(
+        &bot,
+        dialogue_message.chat.id,
+        Some(dialogue_message),
+        msg::DEFAULT_DOC_NAME,
+        &pages,
+    )
+    .await?;
+
+    dialogue.update(BotState::Empty).await?;
+
+    Ok(())
+}
+
+async fn send_pdf(
+    bot: &Bot,
+    chat_id: ChatId,
+    dialogue_message: Option<Message>,
+    name: &str,
+    pages: &Pages,
+) -> anyhow::Result<()> {
+    let dialogue_message = if let Some(dialogue_message) = dialogue_message {
+        bot.edit_message_text(chat_id, dialogue_message.id, msg::SCAN_PREPARE_PDF)
+            .await?
+    } else {
+        bot.send_message(chat_id, msg::SCAN_PREPARE_PDF).await?
+    };
+
+    let pages = mem::take(&mut *pages.lock().await);
+    let pdf = tokio::task::spawn_blocking(|| convert_pages_to_document(pages))
+        .await
+        .unwrap();
+
+    edit_msg(bot, &dialogue_message, msg::MULTIPAGE_SCAN_RESULT).await?;
+
+    bot.send_document(
+        dialogue_message.chat.id,
+        InputFile::memory(pdf).file_name(format!("{name}.pdf")),
+    )
+    .await?;
+    Ok(())
+}
+
+fn convert_pages_to_document(pages: Vec<Jpeg>) -> Vec<u8> {
+    // TODO: Remove hardcoded dpi
+    let pdf_builder = PdfBuilder::new("Document", 300.0);
+
+    for page in pages {
+        pdf_builder.add_image(page).unwrap();
+    }
+
+    let mut pdf = Vec::new();
+    pdf_builder
+        .write_to(&mut io::BufWriter::with_capacity(128 * 1024, &mut pdf))
+        .unwrap();
+
+    pdf
 }
 
 async fn hello(bot: Bot, msg: Message) -> anyhow::Result<()> {

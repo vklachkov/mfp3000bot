@@ -1,6 +1,9 @@
 use once_cell::sync::Lazy;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
+pub const DEFAULT_SINGLE_PAGE_NAME: &str = "Страница";
+pub const DEFAULT_DOC_NAME: &str = "Документ";
+
 pub const UNALLOWED_USER: &str =
     "👀 У вас нет доступа к этому Telegram боту. Обратитесь к администратору для получения доступа";
 
@@ -123,6 +126,17 @@ pub enum ScanCancel {
     Forget,
     Cancel,
 }
+
+pub const RENAME_DOCUMENT: &str = "🏷️ Введите имя документа:";
+
+#[rustfmt::skip]
+pub static RENAME_DOCUMENT_BUTTONS: Lazy<[(&str, (usize, &str)); 1]> = Lazy::new(|| {
+    [
+        ("-", (0, "📥 Оставить по-умолчанию")),
+    ]
+});
+
+pub const INVALID_DOCUMENT_NAME: &str = "🏷️ Введите имя документа:";
 
 pub fn buttons_to_inline_keyboard(buttons: &[(&str, (usize, &str))]) -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::new((0..buttons.len()).map(|idx| {
