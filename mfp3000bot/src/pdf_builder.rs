@@ -23,7 +23,7 @@ impl PdfBuilder {
         }
     }
 
-    pub fn add_image(&self, jpeg: Jpeg) -> io::Result<()> {
+    pub fn add_page(&self, jpeg: Jpeg) -> io::Result<()> {
         let width = Px(jpeg.width);
         let height = Px(jpeg.height);
 

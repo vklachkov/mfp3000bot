@@ -19,6 +19,7 @@ pub enum ScanState {
     Cancelled,
 }
 
+#[derive(Clone)]
 pub struct Jpeg {
     pub bytes: Vec<u8>,
     pub format: JpegFormat,
@@ -26,6 +27,7 @@ pub struct Jpeg {
     pub height: usize,
 }
 
+#[derive(Clone, Copy)]
 pub enum JpegFormat {
     Rgb,
     Gray,

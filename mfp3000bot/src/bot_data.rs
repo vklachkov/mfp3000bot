@@ -1,13 +1,10 @@
 use once_cell::sync::Lazy;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
-pub const DEFAULT_SINGLE_PAGE_NAME: &str = "Страница";
-pub const DEFAULT_DOC_NAME: &str = "Документ";
-
 pub const UNALLOWED_USER: &str =
     "👀 У вас нет доступа к этому Telegram боту. Обратитесь к администратору для получения доступа";
 
-pub const HELLO_TEXT: &str = "\
+pub const HELLO: &str = "\
 👋 Добро пожаловать в бот для печати и сканирования!
 
 Чтобы распечатать документ просто отправьте отправьте PDF или DOCX файл в этот чат.
@@ -17,7 +14,7 @@ pub const HELLO_TEXT: &str = "\
 Все команды доступны через кнопку \"Меню\" внизу экрана.
 ";
 
-pub const HELP_TEXT: &str = "\
+pub const HELP: &str = "\
 🖨️ Этот бот предназначен для быстрого доступа к домашнему принтеру через Telegram.
 
 Чтобы распечатать документ просто отправьте отправьте PDF или DOCX файл в этот чат.
@@ -32,6 +29,8 @@ pub const PRINT_COMMAND_TEXT: &str =
 
 pub const NO_PRINTER_IN_CFG: &str =
     "🖨️ Принтер не указан в конфиге. Измените конфигурационный файл и перезапустите бота!";
+
+pub const UNSUPPORTED_DOCUMENT: &str = "😓 Извините, ваш документ не поддерживается.";
 
 pub const SUCCESSFUL_PRINT: &dyn Fn(&str) -> String =
     &|doc_name| format!("📄 Документ \"{doc_name}\" успешно отправлен на печать!");
@@ -66,11 +65,11 @@ pub static SCAN_ACTIONS_BUTTONS: Lazy<[(&str, (usize, &str)); 3]> = Lazy::new(||
     ]
 });
 
-pub const MULTIPAGE_SELECT_SCAN_ACTION: &dyn Fn(usize) -> String =
+pub const SELECT_DOCUMENT_ACTION: &dyn Fn(usize) -> String =
     &|count| format!("📄 Страниц в документе: {count}. Выберите действие");
 
 #[rustfmt::skip]
-pub static MULTIPAGE_SCAN_ACTIONS_BUTTONS: Lazy<[(&str, (usize, &str)); 4]> = Lazy::new(|| {
+pub static DOCUMENT_ACTION_BUTTONS: Lazy<[(&str, (usize, &str)); 4]> = Lazy::new(|| {
     [
         (ScanAction::Cancel.into(), (0, "⛔ Прервать сканирование")),
         (ScanAction::Scan.into(), (1, "🚀 Добавить страницу")),
@@ -139,6 +138,10 @@ pub static RENAME_DOCUMENT_BUTTONS: Lazy<[(&str, (usize, &str)); 1]> = Lazy::new
 });
 
 pub const INVALID_DOCUMENT_NAME: &str = "🏷️ Введите имя документа:";
+
+pub const DEFAULT_SINGLE_PAGE_NAME: &str = "Страница";
+
+pub const DEFAULT_DOC_NAME: &str = "Документ";
 
 pub fn buttons_to_inline_keyboard(buttons: &[(&str, (usize, &str))]) -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::new((0..buttons.len()).map(|idx| {

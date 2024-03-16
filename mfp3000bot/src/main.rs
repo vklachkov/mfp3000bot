@@ -1,5 +1,6 @@
 mod bot;
 mod bot_data;
+mod bot_utils;
 mod config;
 mod pdf_builder;
 mod print;
