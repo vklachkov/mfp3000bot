@@ -33,13 +33,17 @@ pub enum JpegFormat {
     Gray,
 }
 
-pub fn start(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receiver<ScanState> {
+pub fn start(
+    config: Config,
+    dpi: u16,
+    mut cancel: oneshot::Receiver<()>,
+) -> mpsc::Receiver<ScanState> {
     let (mut state_tx, state_rx) = mpsc::channel(4);
 
     thread::Builder::new()
         .name("scan".to_owned())
         .spawn(move || {
-            let scan_result = scan_page(config, &mut state_tx, &mut cancel);
+            let scan_result = scan_page(config, dpi, &mut state_tx, &mut cancel);
             match scan_result {
                 Ok(true) => {}
                 Ok(false) => {
@@ -57,6 +61,7 @@ pub fn start(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receive
 
 fn scan_page(
     config: Config,
+    dpi: u16,
     state: &mut mpsc::Sender<ScanState>,
     cancel: &mut oneshot::Receiver<()>,
 ) -> anyhow::Result<bool> {
@@ -104,7 +109,7 @@ fn scan_page(
     check_cancellation!(cancel);
     let mut scanner = Scanner::new(device).context("opening device")?;
 
-    setup_scanner(&mut scanner, &config);
+    setup_scanner(&mut scanner, &config, dpi);
 
     check_cancellation!(cancel);
     let mut reader = scanner.start().context("starting scan")?;
@@ -161,7 +166,7 @@ fn scan_page(
     Ok(true)
 }
 
-fn setup_scanner(scanner: &mut Scanner<'_>, config: &Config) {
+fn setup_scanner(scanner: &mut Scanner<'_>, config: &Config, dpi: u16) {
     let device_name = scanner.get_device().name.to_string();
 
     let options = scanner.options();
@@ -172,6 +177,20 @@ fn setup_scanner(scanner: &mut Scanner<'_>, config: &Config) {
             log::debug!("Skip unnamed option #{i}");
             continue;
         };
+
+        if option_name.is_empty() {
+            log::debug!("Skip unnamed option #{i}");
+            continue;
+        }
+
+        if option_name == "resolution" {
+            if let Err(err) = option.set_value(OptionValue::Int(dpi as i32)) {
+                log::warn!("Failed to set DPI (option '{option_name}', #{i}): {err}. Trying to use value from config");
+            } else {
+                log::debug!("Successfully set {dpi} DPI (option '{option_name}', #{i})");
+                continue;
+            }
+        }
 
         'custom_value: {
             let Some(config) = config.scanner.get(&device_name) else {

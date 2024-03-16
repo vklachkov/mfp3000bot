@@ -6,5 +6,10 @@ allowed_users = []
 # printer = ""
 scanner = "v4l:/dev/video0"
 
+[scanner_common]
+preview_dpi = 100
+page_dpi = 300
+page_quality = 75
+
 [scanner."v4l:/dev/video0"]
 mode = "color"

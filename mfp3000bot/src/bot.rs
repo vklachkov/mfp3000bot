@@ -397,7 +397,8 @@ async fn scan_first_page_task(
     mode: ScanMode,
     cancel: oneshot::Receiver<()>,
 ) -> anyhow::Result<()> {
-    let scan_result = scan_page(globals, &bot, &dialogue_message, cancel).await?;
+    let dpi = globals.config.scanner_common.page_dpi;
+    let scan_result = scan_page(globals, &bot, &dialogue_message, dpi, cancel).await?;
     match scan_result {
         ScanResult::Done(page) => match mode {
             ScanMode::SinglePage => {
@@ -469,8 +470,8 @@ where
     Fn: FnOnce(Bot, BotDialogue, Option<Message>) -> F,
     F: Future<Output = anyhow::Result<()>>,
 {
-    // TODO: Change dpi for preview.
-    let scan_result = scan_page(globals, &bot, &dialogue_message, cancel).await?;
+    let dpi = globals.config.scanner_common.preview_dpi;
+    let scan_result = scan_page(globals, &bot, &dialogue_message, dpi, cancel).await?;
     match scan_result {
         ScanResult::Done(jpeg) => {
             edit_msg(&bot, &dialogue_message, SCAN_PREVIEW_DONE).await?;
@@ -502,9 +503,10 @@ async fn scan_page(
     globals: Arc<Globals>,
     bot: &Bot,
     message: &Message,
+    dpi: u16,
     cancel: oneshot::Receiver<()>,
 ) -> anyhow::Result<ScanResult> {
-    let mut state_receiver = scan::start(globals.config.clone(), cancel);
+    let mut state_receiver = scan::start(globals.config.clone(), dpi, cancel);
     while let Some(state) = state_receiver.recv().await {
         match state {
             ScanState::Prepair => {
@@ -730,7 +732,8 @@ async fn scan_document_page_task(
     cancel: oneshot::Receiver<()>,
     mut pages: Pages,
 ) -> anyhow::Result<()> {
-    let scan_result = scan_page(globals, &bot, &dialogue_message, cancel).await?;
+    let dpi = globals.config.scanner_common.page_dpi;
+    let scan_result = scan_page(globals, &bot, &dialogue_message, dpi, cancel).await?;
     match scan_result {
         ScanResult::Done(page) => {
             pages.push(page);

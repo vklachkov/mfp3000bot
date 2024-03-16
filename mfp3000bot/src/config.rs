@@ -29,8 +29,8 @@ pub struct Devices {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CommonScanner {
-    pub preview_dpi: f32,
-    pub page_dpi: f32,
+    pub preview_dpi: u16,
+    pub page_dpi: u16,
     pub page_quality: u8,
 }
 
