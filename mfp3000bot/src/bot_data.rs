@@ -92,6 +92,8 @@ pub const SCAN_PREPAIR: &str = "⚙️ Подготовка к сканиров�
 pub const SCAN_PROGRESS: &dyn Fn(f64) -> String =
     &|progress| format!("⏳ Прогресс сканирования: {progress:.0}%");
 
+pub const SCAN_COMPRESS_JPEG: &str = "⚙️ Подготовка JPEG...";
+
 pub const SCAN_PREVIEW_DONE: &str = "👀 Превью страницы:";
 
 pub const SINGLE_PAGE_SCAN_RESULT: &str = "📄 Отсканированная страница:";

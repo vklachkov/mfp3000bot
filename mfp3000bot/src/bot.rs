@@ -452,6 +452,9 @@ async fn scan(
             ScanState::Progress(p) => {
                 edit_interative(bot, message, &msg::SCAN_PROGRESS(p), &cancel_button).await?;
             }
+            ScanState::CompressToJpeg => {
+                edit_msg(bot, message, msg::SCAN_COMPRESS_JPEG).await?;
+            }
             ScanState::Done(jpeg) => {
                 return Ok(Some(jpeg));
             }

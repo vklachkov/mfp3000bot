@@ -9,6 +9,8 @@ pub struct Config {
 
     pub devices: Devices,
 
+    pub scanner_common: CommonScanner,
+
     #[serde(default = "Default::default")]
     pub scanner: HashMap<String, HashMap<BString, BString>>,
 }
@@ -23,6 +25,13 @@ pub struct Telegram {
 pub struct Devices {
     pub printer: Option<String>,
     pub scanner: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CommonScanner {
+    pub preview_dpi: f32,
+    pub page_dpi: f32,
+    pub page_quality: u8,
 }
 
 impl Config {

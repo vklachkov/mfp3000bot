@@ -13,6 +13,7 @@ lazy_static! {
 pub enum ScanState {
     Prepair,
     Progress(f64),
+    CompressToJpeg,
     Done(Jpeg),
     Error(anyhow::Error),
     Cancelled,
@@ -36,23 +37,16 @@ pub fn start(config: Config, mut cancel: oneshot::Receiver<()>) -> mpsc::Receive
     thread::Builder::new()
         .name("scan".to_owned())
         .spawn(move || {
-            match scan_page(config, &mut state_tx, &mut cancel) {
-                Ok(Some((parameters, bytes))) => {
-                    match raw_image(parameters, bytes) {
-                        Ok(raw_image) => {
-                            let jpeg = encode_jpeg(raw_image, 70);
-                            _ = state_tx.blocking_send(ScanState::Done(jpeg))
-                        }
-                        Err(err) => _ = state_tx.blocking_send(ScanState::Error(err)),
-                    };
-                }
-                Ok(None) => {
+            let scan_result = scan_page(config, &mut state_tx, &mut cancel);
+            match scan_result {
+                Ok(true) => {}
+                Ok(false) => {
                     _ = state_tx.blocking_send(ScanState::Cancelled);
                 }
                 Err(err) => {
                     _ = state_tx.blocking_send(ScanState::Error(err));
                 }
-            };
+            }
         })
         .expect("thread name should be valid");
 
@@ -63,12 +57,12 @@ fn scan_page(
     config: Config,
     state: &mut mpsc::Sender<ScanState>,
     cancel: &mut oneshot::Receiver<()>,
-) -> anyhow::Result<Option<(Parameters, Vec<u8>)>> {
+) -> anyhow::Result<bool> {
     macro_rules! send_state {
         ($state:expr) => {
             if state.blocking_send($state).is_err() {
                 log::debug!("State sender was dropped");
-                return Ok(None);
+                return Ok(false);
             }
         };
     }
@@ -77,11 +71,11 @@ fn scan_page(
             match $channel.try_recv() {
                 Ok(()) => {
                     log::debug!("Scan cancelled");
-                    return Ok(None);
+                    return Ok(false);
                 }
                 Err(oneshot::error::TryRecvError::Closed) => {
                     log::debug!("Cancel sender was dropped");
-                    return Ok(None);
+                    return Ok(false);
                 }
                 Err(oneshot::error::TryRecvError::Empty) => {}
             }
@@ -119,21 +113,19 @@ fn scan_page(
     log::debug!("Start scan with parameters {parameters:?}");
 
     let page_size = parameters.bytes_per_line * parameters.lines;
-    let mut page = vec![0u8; page_size];
+    let mut pixels = vec![0u8; page_size];
     let mut page_offset = 0;
 
-    send_state!(ScanState::Progress(0.0));
-
-    let mut previous_progress = 0.0;
+    let mut previous_progress = f64::MIN;
     loop {
-        const WINDOW_SIZE: usize = 128 * 1024;
+        const WINDOW_SIZE: usize = 16 * 1024;
 
         check_cancellation!(cancel);
 
         let buf = if page_offset + WINDOW_SIZE < page_size {
-            &mut page[page_offset..page_offset + WINDOW_SIZE]
+            &mut pixels[page_offset..page_offset + WINDOW_SIZE]
         } else {
-            &mut page[page_offset..page_size]
+            &mut pixels[page_offset..page_size]
         };
 
         let read = reader.read(buf).context("reading from scanner")?;
@@ -147,7 +139,7 @@ fn scan_page(
         );
 
         let progress = page_offset as f64 / page_size as f64 * 100.;
-        if progress - previous_progress >= 5.0 {
+        if progress - previous_progress >= 15.0 {
             send_state!(ScanState::Progress(progress));
             previous_progress = progress;
         }
@@ -155,13 +147,16 @@ fn scan_page(
         page_offset += read;
     }
 
-    send_state!(ScanState::Progress(100.0));
-
     check_cancellation!(cancel);
 
-    log::debug!("Scan done");
+    send_state!(ScanState::CompressToJpeg);
 
-    Ok(Some((parameters, page)))
+    let raw_image = raw_image(parameters, pixels)?;
+    let jpeg = encode_jpeg(raw_image, config.scanner_common.page_quality);
+
+    send_state!(ScanState::Done(jpeg));
+
+    Ok(true)
 }
 
 fn setup_scanner(scanner: &mut Scanner<'_>, config: &Config) {
@@ -229,11 +224,7 @@ fn raw_image(parameters: Parameters, pixels: Vec<u8>) -> anyhow::Result<libjpeg:
 }
 
 fn encode_jpeg(image: libjpeg::RawImage, output_quality: u8) -> Jpeg {
-    log::trace!("Start jpeg encoding");
-
     let bytes = unsafe { libjpeg::compress_to_jpeg(&image, output_quality) };
-
-    log::trace!("End jpeg encoding");
 
     Jpeg {
         bytes,
