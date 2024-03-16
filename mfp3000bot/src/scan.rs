@@ -13,6 +13,7 @@ lazy_static! {
 pub enum ScanState {
     Prepair,
     Progress(f64),
+    StopScanner,
     CompressToJpeg,
     Done(Jpeg),
     Error(anyhow::Error),
@@ -155,7 +156,12 @@ fn scan_page(
     }
 
     check_cancellation!(cancel);
+    send_state!(ScanState::StopScanner);
 
+    drop(reader);
+    drop(scanner);
+
+    check_cancellation!(cancel);
     send_state!(ScanState::CompressToJpeg);
 
     let raw_image = raw_image(parameters, pixels)?;

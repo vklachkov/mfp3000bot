@@ -515,6 +515,9 @@ async fn scan_page(
             ScanState::Progress(p) => {
                 edit_interative(bot, message, &SCAN_PROGRESS(p), &*SCAN_CANCEL).await?;
             }
+            ScanState::StopScanner => {
+                edit_msg(bot, message, STOP_SCANNER).await?;
+            }
             ScanState::CompressToJpeg => {
                 edit_msg(bot, message, SCAN_COMPRESS_JPEG).await?;
             }
