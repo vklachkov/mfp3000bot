@@ -94,6 +94,10 @@ impl<'b, 'd> PageReader<'b, 'd> {
 
 impl io::Read for PageReader<'_, '_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+
         let mut count = 0;
 
         log::trace!(

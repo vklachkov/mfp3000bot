@@ -88,8 +88,7 @@ pub enum ScanAction {
 
 pub const SCAN_PREPAIR: &str = "⚙️ Подготовка к сканированию...";
 
-pub const SCAN_PROGRESS: &dyn Fn(f64) -> String =
-    &|progress| format!("⏳ Прогресс сканирования: {progress:.0}%");
+pub const SCAN_PROGRESS: &str = "⏳ Сканирование страницы...";
 
 pub const STOP_SCANNER: &str = "⚙️ Остановка сканера...";
 

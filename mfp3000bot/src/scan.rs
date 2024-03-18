@@ -12,8 +12,8 @@ lazy_static! {
 
 pub enum ScanState {
     Prepair,
-    Progress(f64),
-    StopScanner,
+    Progress,
+    Stop,
     CompressToJpeg,
     Done(Jpeg),
     Error(anyhow::Error),
@@ -120,43 +120,40 @@ fn scan_page(
 
     log::debug!("Start scan with parameters {parameters:?}");
 
-    let page_size = parameters.bytes_per_line * parameters.lines;
-    let mut pixels = vec![0u8; page_size];
-    let mut page_offset = 0;
+    check_cancellation!(cancel);
+    send_state!(ScanState::Progress);
 
-    let mut previous_progress = f64::MIN;
+    let mut pixels = vec![0u8; parameters.bytes_per_line * parameters.lines];
+    let mut pixels_offset = 0;
+
+    let mut scanline = vec![0u8; parameters.bytes_per_line];
+    let mut scanline_offset = 0;
+
     loop {
-        const WINDOW_SIZE: usize = 16 * 1024;
-
         check_cancellation!(cancel);
 
-        let buf = if page_offset + WINDOW_SIZE < page_size {
-            &mut pixels[page_offset..page_offset + WINDOW_SIZE]
-        } else {
-            &mut pixels[page_offset..page_size]
-        };
-
+        let buf = &mut scanline[scanline_offset..];
         let read = reader.read(buf).context("reading from scanner")?;
         if read == 0 {
             break;
         }
 
-        log::trace!(
-            "Scan progress {page_offset} of {page_size} bytes ({}%)",
-            (page_offset as f64 / page_size as f64 * 100.)
-        );
-
-        let progress = page_offset as f64 / page_size as f64 * 100.;
-        if progress - previous_progress >= 15.0 {
-            send_state!(ScanState::Progress(progress));
-            previous_progress = progress;
+        if pixels_offset == pixels.len() {
+            bail!("sane_read() returns {read} bytes, but page has already been read");
         }
 
-        page_offset += read;
+        scanline_offset += read;
+
+        if scanline_offset == scanline.len() {
+            pixels[pixels_offset..pixels_offset + scanline.len()].copy_from_slice(&scanline);
+            pixels_offset += scanline.len();
+
+            scanline_offset = 0;
+        }
     }
 
     check_cancellation!(cancel);
-    send_state!(ScanState::StopScanner);
+    send_state!(ScanState::Stop);
 
     drop(reader);
     drop(scanner);
