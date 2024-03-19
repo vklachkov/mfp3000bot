@@ -6,7 +6,7 @@ use reqwest::{
 };
 use simple_cups::{
     options::{ColorMode, MediaFormat, Options, Orientation, PrintQuality, Sides},
-    printer::{Document, DocumentType, Printer},
+    printer::{DeviceName, Document, DocumentName, DocumentType, JobTitle, Printer},
 };
 use std::{
     io::{self, Read},
@@ -15,7 +15,7 @@ use std::{
 
 pub fn print_remote_file(printer: &str, docname: &String, url: &Url) -> anyhow::Result<()> {
     tokio::task::block_in_place(|| {
-        let Some(printer) = Printer::find_by_name(printer) else {
+        let Some(printer) = Printer::find_by_name(DeviceName::new(printer).unwrap()) else {
             bail!("printer '{printer}' not found");
         };
 
@@ -39,7 +39,7 @@ pub fn print_remote_file(printer: &str, docname: &String, url: &Url) -> anyhow::
 
         // TODO: Support plaintext, images and docx.
         let document = Document {
-            file_name: docname,
+            file_name: DocumentName::new(docname).unwrap(),
             ty,
             reader: &mut reader,
         };
@@ -53,7 +53,7 @@ pub fn print_remote_file(printer: &str, docname: &String, url: &Url) -> anyhow::
             .quality(PrintQuality::Normal)
             .copies(cstr!("1"));
 
-        printer.print_documents(docname, options, vec![document])?;
+        printer.print_documents(JobTitle::new(docname).unwrap(), options, vec![document])?;
 
         Ok(())
     })

@@ -10,7 +10,6 @@ use std::{
     ops::RangeInclusive,
     ptr::null_mut,
 };
-use thiserror::Error;
 
 #[derive(Debug)]
 pub struct Scanner<'b> {
