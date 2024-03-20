@@ -728,6 +728,7 @@ name = "libcups-sys"
 version = "2.4.0"
 dependencies = [
  "bindgen",
+ "pkg-config",
 ]
 
 [[package]]

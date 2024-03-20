@@ -4,7 +4,15 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=ffi/wrapper.h");
 
-    bindgen_cups()
+    check_cups();
+    bindgen_cups();
+}
+
+fn check_cups() {
+    pkg_config::Config::new()
+        .atleast_version("2.0.0")
+        .probe("cups")
+        .unwrap();
 }
 
 fn bindgen_cups() {
