@@ -1,88 +1,101 @@
-use super::ffi;
-use crate::{
-    printer::{Job, JobTitle},
-    utils::cups_error,
-};
+use crate::{job::Job, result::cups_error, utils::c_enum};
+use libcups_sys::*;
 use std::{
     ffi::{CStr, CString},
-    fmt::Display,
+    fmt::Debug,
     io,
     mem::ManuallyDrop,
-    ptr,
-    ptr::null_mut,
+    ptr::{self, null_mut},
 };
 
+/// Print options.
 pub struct Options {
-    inner: *mut ffi::cups_option_t,
+    ptr: *mut cups_option_t,
     count: i32,
     values: OptionsValues,
 }
 
+/// Stores string representations of options.
+///
+/// This is necessary because all CUPS option are stored in strings
+/// and must lived until job is completed.
 pub struct OptionsValues {
     copies: Option<CString>,
 }
 
 impl Options {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
+    /// Set paper size for print.
     pub fn media_format(mut self, format: MediaFormat) -> Self {
-        self.add_option(slice_to_cstr(ffi::CUPS_MEDIA), format.value());
+        self.add_option(CUPS_MEDIA, format.value());
         self
     }
 
+    /// Set print orientation.
+    ///
+    /// Option doesn't work for PDF documents.
     pub fn orientation(mut self, orientation: Orientation) -> Self {
-        self.add_option(slice_to_cstr(ffi::CUPS_ORIENTATION), orientation.value());
+        self.add_option(CUPS_ORIENTATION, orientation.value());
         self
     }
 
+    /// Set one-sided or two-sided printing mode.
+    ///
+    /// If printer doesn't support two sided printing, this option does nothing.
     pub fn sides(mut self, sides: Sides) -> Self {
-        self.add_option(slice_to_cstr(ffi::CUPS_SIDES), sides.value());
+        self.add_option(CUPS_SIDES, sides.value());
         self
     }
 
+    /// Set printing color mode.
+    ///
+    /// If printer doesn't support color printing, this option does nothing.
     pub fn color_mode(mut self, mode: ColorMode) -> Self {
-        self.add_option(slice_to_cstr(ffi::CUPS_PRINT_COLOR_MODE), mode.value());
+        self.add_option(CUPS_PRINT_COLOR_MODE, mode.value());
         self
     }
 
+    /// Set print quality.
     pub fn quality(mut self, quality: PrintQuality) -> Self {
-        self.add_option(slice_to_cstr(ffi::CUPS_PRINT_QUALITY), quality.value());
+        self.add_option(CUPS_PRINT_QUALITY, quality.value());
         self
     }
 
+    fn add_option(&mut self, name: &CStr, value: &CStr) {
+        self.count =
+            unsafe { cupsAddOption(name.as_ptr(), value.as_ptr(), self.count, &mut self.ptr) };
+    }
+
+    /// Set number of copies.
     pub fn copies(mut self, copies: usize) -> Self {
         let copies = self.values.copies.insert(unsafe {
             CString::from_vec_with_nul_unchecked(format!("{copies}\0").into_bytes())
         });
 
         self.count = unsafe {
-            ffi::cupsAddOption(
-                ffi::CUPS_COPIES.as_ptr().cast(),
+            cupsAddOption(
+                CUPS_COPIES.as_ptr().cast(),
                 copies.as_ptr(),
                 self.count,
-                &mut self.inner,
+                &mut self.ptr,
             )
         };
 
         self
     }
 
-    fn add_option(&mut self, name: &CStr, value: &CStr) {
-        self.count = unsafe {
-            ffi::cupsAddOption(name.as_ptr(), value.as_ptr(), self.count, &mut self.inner)
-        };
-    }
-
+    /// Create a new job on CUPS server.
+    ///
+    /// # Error
+    ///
+    /// Return error if [`cupsCreateJob`] returns zero.
     pub fn create_job(self, device_name: &CStr, title: &CStr) -> io::Result<Job> {
         let (inner, count, values) = unsafe {
-            let mut this = ManuallyDrop::new(self);
-            (this.inner, this.count, ptr::read(&this.values))
+            let this = ManuallyDrop::new(self);
+            (this.ptr, this.count, ptr::read(&this.values))
         };
 
         let id = unsafe {
-            ffi::cupsCreateJob(
+            cupsCreateJob(
                 null_mut(),
                 device_name.as_ptr(),
                 title.as_ptr(),
@@ -105,159 +118,83 @@ impl Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            inner: null_mut(),
+            ptr: null_mut(),
             count: 0,
             values: OptionsValues { copies: None },
         }
     }
 }
 
-impl Drop for Options {
-    fn drop(&mut self) {
-        unsafe { ffi::cupsFreeOptions(self.count, self.inner) }
-    }
-}
-
-impl Display for Options {
+impl Debug for Options {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.count == 0 {
-            return Ok(());
-        }
+        let mut debug_map = f.debug_map();
 
         for i in 0..self.count {
-            let option = unsafe { self.inner.add(i as usize) };
+            let option = unsafe { self.ptr.add(i as usize) };
 
-            write!(
-                f,
-                "{name} = {value}{separator}",
-                name = unsafe { CStr::from_ptr((*option).name).to_string_lossy() },
-                value = unsafe { CStr::from_ptr((*option).value).to_string_lossy() },
-                separator = if i != self.count - 1 { ", " } else { "" },
-            )?;
+            let name = unsafe { CStr::from_ptr((*option).name) };
+            let value = unsafe { CStr::from_ptr((*option).value) };
+
+            debug_map.entry(&name, &value);
         }
 
-        Ok(())
+        debug_map.finish()
     }
 }
 
-pub enum MediaFormat {
-    F3X5,
-    F4X6,
-    F5X7,
-    F8X10,
-    A3,
-    A4,
-    A5,
-    A6,
-    Env10,
-    EnvDl,
-    Legal,
-    Letter,
-    PhotoL,
-    SuperBa3,
-    Tabloid,
-}
-
-impl MediaFormat {
-    pub fn value(self) -> &'static CStr {
-        let cups_value: &[u8] = match self {
-            Self::F3X5 => ffi::CUPS_MEDIA_3X5,
-            Self::F4X6 => ffi::CUPS_MEDIA_4X6,
-            Self::F5X7 => ffi::CUPS_MEDIA_5X7,
-            Self::F8X10 => ffi::CUPS_MEDIA_8X10,
-            Self::A3 => ffi::CUPS_MEDIA_A3,
-            Self::A4 => ffi::CUPS_MEDIA_A4,
-            Self::A5 => ffi::CUPS_MEDIA_A5,
-            Self::A6 => ffi::CUPS_MEDIA_A6,
-            Self::Env10 => ffi::CUPS_MEDIA_ENV10,
-            Self::EnvDl => ffi::CUPS_MEDIA_ENVDL,
-            Self::Legal => ffi::CUPS_MEDIA_LEGAL,
-            Self::Letter => ffi::CUPS_MEDIA_LETTER,
-            Self::PhotoL => ffi::CUPS_MEDIA_PHOTO_L,
-            Self::SuperBa3 => ffi::CUPS_MEDIA_SUPERBA3,
-            Self::Tabloid => ffi::CUPS_MEDIA_TABLOID,
-        };
-
-        slice_to_cstr(cups_value)
+impl Drop for Options {
+    fn drop(&mut self) {
+        unsafe { cupsFreeOptions(self.count, self.ptr) }
     }
 }
 
-pub enum Orientation {
-    Portrait,
-    Landscape,
-}
-
-impl Orientation {
-    pub fn value(self) -> &'static CStr {
-        let cups_value: &[u8] = match self {
-            Self::Portrait => ffi::CUPS_ORIENTATION_PORTRAIT,
-            Self::Landscape => ffi::CUPS_ORIENTATION_LANDSCAPE,
-        };
-
-        slice_to_cstr(cups_value)
+c_enum! {
+    pub enum MediaFormat {
+        F3X5: CUPS_MEDIA_3X5,
+        F4X6: CUPS_MEDIA_4X6,
+        F5X7: CUPS_MEDIA_5X7,
+        F8X10: CUPS_MEDIA_8X10,
+        A3: CUPS_MEDIA_A3,
+        A4: CUPS_MEDIA_A4,
+        A5: CUPS_MEDIA_A5,
+        A6: CUPS_MEDIA_A6,
+        Env10: CUPS_MEDIA_ENV10,
+        EnvDl: CUPS_MEDIA_ENVDL,
+        Legal: CUPS_MEDIA_LEGAL,
+        Letter: CUPS_MEDIA_LETTER,
+        PhotoL: CUPS_MEDIA_PHOTO_L,
+        SuperBa3: CUPS_MEDIA_SUPERBA3,
+        Tabloid: CUPS_MEDIA_TABLOID,
     }
 }
 
-pub enum Sides {
-    OneSide,
-    TwoSidedPortrait,
-    TwoSidedLandscape,
-}
-
-impl Sides {
-    pub fn value(self) -> &'static CStr {
-        let cups_value: &[u8] = match self {
-            Self::OneSide => ffi::CUPS_SIDES_ONE_SIDED,
-            Self::TwoSidedPortrait => ffi::CUPS_SIDES_TWO_SIDED_PORTRAIT,
-            Self::TwoSidedLandscape => ffi::CUPS_SIDES_TWO_SIDED_LANDSCAPE,
-        };
-
-        slice_to_cstr(cups_value)
+c_enum! {
+    pub enum Orientation {
+        Portrait: CUPS_ORIENTATION_PORTRAIT,
+        Landscape: CUPS_ORIENTATION_LANDSCAPE,
     }
 }
 
-pub enum ColorMode {
-    Auto,
-    Color,
-    Monochrome,
-}
-
-impl ColorMode {
-    pub fn value(self) -> &'static CStr {
-        let cups_value: &[u8] = match self {
-            Self::Auto => ffi::CUPS_PRINT_COLOR_MODE_AUTO,
-            Self::Color => ffi::CUPS_PRINT_COLOR_MODE_COLOR,
-            Self::Monochrome => ffi::CUPS_PRINT_COLOR_MODE_MONOCHROME,
-        };
-
-        slice_to_cstr(cups_value)
+c_enum! {
+    pub enum Sides {
+        OneSide: CUPS_SIDES_ONE_SIDED,
+        TwoSidedPortrait: CUPS_SIDES_TWO_SIDED_PORTRAIT,
+        TwoSidedLandscape: CUPS_SIDES_TWO_SIDED_LANDSCAPE,
     }
 }
 
-pub enum PrintQuality {
-    Draft,
-    Normal,
-    High,
-}
-
-impl PrintQuality {
-    pub fn value(self) -> &'static CStr {
-        let cups_value: &[u8] = match self {
-            Self::Draft => ffi::CUPS_PRINT_QUALITY_DRAFT,
-            Self::Normal => ffi::CUPS_PRINT_QUALITY_NORMAL,
-            Self::High => ffi::CUPS_PRINT_QUALITY_HIGH,
-        };
-
-        slice_to_cstr(cups_value)
+c_enum! {
+    pub enum ColorMode {
+        Auto: CUPS_PRINT_COLOR_MODE_AUTO,
+        Color: CUPS_PRINT_COLOR_MODE_COLOR,
+        Monochrome: CUPS_PRINT_COLOR_MODE_MONOCHROME,
     }
 }
 
-/// Converts null-ended slice to CStr.
-///
-/// Bindgen doesn't support CStr, so we need to do the cast manually.
-fn slice_to_cstr(slice: &[u8]) -> &CStr {
-    assert!(!slice.is_empty());
-    assert_eq!(slice[slice.len() - 1], 0);
-
-    unsafe { CStr::from_ptr(slice.as_ptr().cast()) }
+c_enum! {
+    pub enum PrintQuality {
+        Draft: CUPS_PRINT_QUALITY_DRAFT,
+        Normal: CUPS_PRINT_QUALITY_NORMAL,
+        High: CUPS_PRINT_QUALITY_HIGH,
+    }
 }

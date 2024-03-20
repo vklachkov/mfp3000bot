@@ -253,16 +253,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cstr"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8aa998c33a6d3271e3678950a22134cd7dd27cef86dee1b611b5b14207d1d90b"
-dependencies = [
- "proc-macro2",
- "quote",
-]
-
-[[package]]
 name = "darling"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -734,6 +724,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 
 [[package]]
+name = "libcups-sys"
+version = "2.4.0"
+dependencies = [
+ "bindgen",
+]
+
+[[package]]
 name = "libjpeg"
 version = "0.1.0"
 dependencies = [
@@ -742,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "libjpeg-sys"
-version = "0.1.0"
+version = "3.0.2"
 dependencies = [
  "bindgen",
 ]
@@ -822,7 +819,6 @@ dependencies = [
  "argh",
  "base64 0.22.0",
  "bstr",
- "cstr",
  "iter-read",
  "lazy_static",
  "libjpeg",
@@ -1434,8 +1430,7 @@ dependencies = [
 name = "simple-cups"
 version = "1.0.0"
 dependencies = [
- "bindgen",
- "bstr",
+ "libcups-sys",
  "log",
 ]
 

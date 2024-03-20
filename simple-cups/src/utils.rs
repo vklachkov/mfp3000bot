@@ -1,34 +1,42 @@
 macro_rules! cstring_wrapper {
-    ($($name:ident),* $(,)?) => {
-        $(
-            pub struct $name(::std::ffi::CString);
+    ($visibility:vis $name:ident) => {
+        #[derive(Clone)]
+        $visibility struct $name(::std::ffi::CString);
 
-            impl $name {
-                pub fn new(name: &str) -> Option<Self> {
-                    let name = ::std::ffi::CString::new(name).ok()?;
-                    Some(Self(name))
-                }
+        impl $name {
+            pub fn new(name: &str) -> Option<Self> {
+                let name = ::std::ffi::CString::new(name).ok()?;
+                Some(Self(name))
             }
+        }
 
-            impl ::std::ops::Deref for $name {
-                type Target = ::std::ffi::CString;
+        impl ::std::ops::Deref for $name {
+            type Target = ::std::ffi::CString;
 
-                fn deref(&self) -> &Self::Target {
-                    &self.0
-                }
+            fn deref(&self) -> &Self::Target {
+                &self.0
             }
-        )*
+        }
     };
 }
 
 pub(crate) use cstring_wrapper;
 
-pub fn cups_error() -> Option<String> {
-    let error = unsafe { crate::ffi::cupsLastErrorString().as_ref() }?;
+macro_rules! c_enum {
+    ($visibility:vis enum $enum_name:ident { $($n:ident: $v:ident),* $(,)? }) => {
+        #[derive(Clone, Copy, Debug)]
+        $visibility enum $enum_name {
+            $($n),*
+        }
 
-    let error = unsafe { core::ffi::CStr::from_ptr(error as *const i8) }
-        .to_string_lossy()
-        .into_owned();
-
-    Some(error)
+        impl $enum_name {
+            pub fn value(self) -> &'static ::std::ffi::CStr {
+                match self {
+                    $( Self::$n => $v ),*
+                }
+            }
+        }
+    };
 }
+
+pub(crate) use c_enum;

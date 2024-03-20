@@ -7,8 +7,5 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
-bstr = "1.9.1"
+libcups-sys = { version = "2.4.0", path = "../libcups-sys" }
 log = "0.4.20"
-
-[build-dependencies]
-bindgen = "0.69.2"

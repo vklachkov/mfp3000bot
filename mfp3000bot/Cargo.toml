@@ -8,7 +8,6 @@ anyhow = "1.0.79"
 argh = "0.1.12"
 base64 = "0.22.0"
 bstr = { version = "1.9.0", features = ["serde"] }
-cstr = "0.2.11"
 iter-read = "1.0.1"
 lazy_static = "1.4.0"
 libjpeg = { path = "../libjpeg" }

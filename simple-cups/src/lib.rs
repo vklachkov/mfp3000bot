@@ -1,7 +1,6 @@
-#![allow(unused)]
-
-mod ffi;
-mod utils;
-
+pub mod document;
+mod job;
 pub mod options;
 pub mod printer;
+mod result;
+mod utils;

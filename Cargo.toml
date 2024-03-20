@@ -1,11 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
-    "mfp3000bot",
+    "libcups-sys",
+    "libjpeg-sys",
+
     "simple-cups",
     "simple-sane",
     "libjpeg",
-    "libjpeg-sys",
+
+    "mfp3000bot",
 ]
 
 [profile.release]

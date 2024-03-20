@@ -1,12 +1,12 @@
 use anyhow::{anyhow, bail, Context};
-use cstr::cstr;
 use reqwest::{
     blocking::{get, Client},
     Url,
 };
 use simple_cups::{
+    document::{Document, DocumentName, DocumentType},
     options::{ColorMode, MediaFormat, Options, Orientation, PrintQuality, Sides},
-    printer::{DeviceName, Document, DocumentName, DocumentType, JobTitle, Printer},
+    printer::{DeviceName, JobTitle, Printer},
 };
 use std::{
     io::{self, Read},
@@ -26,26 +26,22 @@ pub fn print_remote_file(printer: &str, docname: &String, url: &Url) -> anyhow::
             )
         })?;
 
+        // TODO: Support images.
         let (ty, mut reader): (_, Box<dyn io::Read>) = if docname.ends_with(".txt") {
             (DocumentType::PlainText, Box::new(document_reader))
         } else if docname.ends_with(".pdf") {
-            (DocumentType::PDF, Box::new(document_reader))
+            (DocumentType::Pdf, Box::new(document_reader))
         } else if docname.ends_with(".docx") {
             let pdf = docx_to_pdf(document_reader)?;
-            (DocumentType::PDF, Box::new(io::Cursor::new(pdf)))
+            (DocumentType::Pdf, Box::new(io::Cursor::new(pdf)))
         } else {
             bail!("Unsupported file format");
         };
 
-        // TODO: Support plaintext, images and docx.
-        let document = Document {
-            file_name: DocumentName::new(docname).unwrap(),
-            ty,
-            reader: &mut reader,
-        };
+        let document = Document::new(DocumentName::new(docname).unwrap(), ty, &mut reader);
 
         // TODO: Move options to the config.
-        let options = Options::new()
+        let options = Options::default()
             .media_format(MediaFormat::A4)
             .orientation(Orientation::Portrait)
             .sides(Sides::OneSide)
