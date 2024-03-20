@@ -1,5 +1,5 @@
 [package]
-name = "simple-cups"
+name = "libcups"
 version = "1.0.0"
 edition = "2021"
 
@@ -9,3 +9,4 @@ path = "src/lib.rs"
 [dependencies]
 libcups-sys = { version = "2.4.0", path = "../libcups-sys" }
 log = "0.4.20"
+serde = { version = "1.0.197", features = ["derive"] }

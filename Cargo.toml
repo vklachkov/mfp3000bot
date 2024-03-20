@@ -2,10 +2,11 @@
 resolver = "2"
 members = [
     "libcups-sys",
-    "libjpeg-sys",
+    "libcups",
 
-    "simple-cups",
     "simple-sane",
+    
+    "libjpeg-sys",
     "libjpeg",
 
     "mfp3000bot",

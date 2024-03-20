@@ -724,6 +724,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 
 [[package]]
+name = "libcups"
+version = "1.0.0"
+dependencies = [
+ "libcups-sys",
+ "log",
+ "serde",
+]
+
+[[package]]
 name = "libcups-sys"
 version = "2.4.0"
 dependencies = [
@@ -822,13 +831,13 @@ dependencies = [
  "bstr",
  "iter-read",
  "lazy_static",
+ "libcups",
  "libjpeg",
  "log",
  "once_cell",
  "printpdf",
  "reqwest",
  "serde",
- "simple-cups",
  "simple-sane",
  "simple_logger",
  "strum",
@@ -1350,18 +1359,18 @@ checksum = "b97ed7a9823b74f99c7742f5336af7be5ecd3eeafcb1507d1fa93347b1d589b0"
 
 [[package]]
 name = "serde"
-version = "1.0.196"
+version = "1.0.197"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "870026e60fa08c69f064aa766c10f10b1d62db9ccd4d0abb206472bee0ce3b32"
+checksum = "3fb1c873e1b9b056a4dc4c0c198b24c3ffa059243875552b2bd0933b1aee4ce2"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.196"
+version = "1.0.197"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33c85360c95e7d137454dc81d9a4ed2b8efd8fbe19cee57357b32b9771fccb67"
+checksum = "7eb0b34b42edc17f6b7cac84a52a1c5f0e1bb2227e997ca9011ea3dd34e8610b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1425,14 +1434,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8229b473baa5980ac72ef434c4415e70c4b5e71b423043adb4ba059f89c99a1"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "simple-cups"
-version = "1.0.0"
-dependencies = [
- "libcups-sys",
- "log",
 ]
 
 [[package]]

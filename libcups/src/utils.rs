@@ -1,3 +1,8 @@
+/// Generate a new type over a `CString` with specified name.
+///
+/// Type implements [`std::fmt::Debug`] and [`std::ops::Deref`] to `&CString`.
+///
+/// Syntax: pub Ident. Visibility is optional.
 macro_rules! cstring_wrapper {
     ($visibility:vis $name:ident) => {
         #[derive(Clone)]
@@ -22,9 +27,13 @@ macro_rules! cstring_wrapper {
 
 pub(crate) use cstring_wrapper;
 
+/// Generate new enum with a `value()` method that returns a c-like values.
+///
+/// The generated enum implements [`std::clone::Clone`], [`std::marker::Copy`],
+/// [`std::fmt::Debug`], [`serde::Serialize`], [`serde::Deserialize`].
 macro_rules! c_enum {
     ($visibility:vis enum $enum_name:ident { $($n:ident: $v:ident),* $(,)? }) => {
-        #[derive(Clone, Copy, Debug)]
+        #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
         $visibility enum $enum_name {
             $($n),*
         }
