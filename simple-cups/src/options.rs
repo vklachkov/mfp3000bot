@@ -1,15 +1,25 @@
 use super::ffi;
-use core::ffi::c_int;
+use crate::{
+    printer::{Job, JobTitle},
+    utils::cups_error,
+};
 use std::{
     ffi::{CStr, CString},
     fmt::Display,
+    io,
     mem::ManuallyDrop,
+    ptr,
     ptr::null_mut,
 };
 
 pub struct Options {
     inner: *mut ffi::cups_option_t,
-    count: c_int,
+    count: i32,
+    values: OptionsValues,
+}
+
+pub struct OptionsValues {
+    copies: Option<CString>,
 }
 
 impl Options {
@@ -42,8 +52,20 @@ impl Options {
         self
     }
 
-    pub fn copies(mut self, copies: &'static CStr) -> Self {
-        self.add_option(slice_to_cstr(ffi::CUPS_COPIES), copies);
+    pub fn copies(mut self, copies: usize) -> Self {
+        let copies = self.values.copies.insert(unsafe {
+            CString::from_vec_with_nul_unchecked(format!("{copies}\0").into_bytes())
+        });
+
+        self.count = unsafe {
+            ffi::cupsAddOption(
+                ffi::CUPS_COPIES.as_ptr().cast(),
+                copies.as_ptr(),
+                self.count,
+                &mut self.inner,
+            )
+        };
+
         self
     }
 
@@ -53,19 +75,30 @@ impl Options {
         };
     }
 
-    pub fn slice(&self) -> &[ffi::cups_option_t] {
-        if self.count == 0 {
-            &[]
-        } else {
-            assert!(!self.inner.is_null());
-            assert!(self.count > 0);
-            unsafe { core::slice::from_raw_parts(self.inner, self.count as usize) }
-        }
-    }
+    pub fn create_job(self, device_name: &CStr, title: &CStr) -> io::Result<Job> {
+        let (inner, count, values) = unsafe {
+            let mut this = ManuallyDrop::new(self);
+            (this.inner, this.count, ptr::read(&this.values))
+        };
 
-    pub fn into_raw(self) -> (*mut ffi::cups_option_t, c_int) {
-        let this = ManuallyDrop::new(self);
-        (this.inner, this.count)
+        let id = unsafe {
+            ffi::cupsCreateJob(
+                null_mut(),
+                device_name.as_ptr(),
+                title.as_ptr(),
+                count,
+                inner,
+            )
+        };
+
+        if id == 0 {
+            return Err(io::Error::other(cups_error().unwrap()));
+        }
+
+        Ok(Job {
+            id,
+            options: values,
+        })
     }
 }
 
@@ -74,6 +107,7 @@ impl Default for Options {
         Self {
             inner: null_mut(),
             count: 0,
+            values: OptionsValues { copies: None },
         }
     }
 }
@@ -86,19 +120,19 @@ impl Drop for Options {
 
 impl Display for Options {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let slice = self.slice();
-        if slice.is_empty() {
+        if self.count == 0 {
             return Ok(());
         }
 
-        let last_index = slice.len() - 1;
-        for (idx, option) in slice.iter().enumerate() {
+        for i in 0..self.count {
+            let option = unsafe { self.inner.add(i as usize) };
+
             write!(
                 f,
                 "{name} = {value}{separator}",
-                name = unsafe { CStr::from_ptr(option.name).to_string_lossy() },
-                value = unsafe { CStr::from_ptr(option.value).to_string_lossy() },
-                separator = if idx != last_index { ", " } else { "" },
+                name = unsafe { CStr::from_ptr((*option).name).to_string_lossy() },
+                value = unsafe { CStr::from_ptr((*option).value).to_string_lossy() },
+                separator = if i != self.count - 1 { ", " } else { "" },
             )?;
         }
 

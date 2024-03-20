@@ -51,7 +51,7 @@ pub fn print_remote_file(printer: &str, docname: &String, url: &Url) -> anyhow::
             .sides(Sides::OneSide)
             .color_mode(ColorMode::Monochrome)
             .quality(PrintQuality::Normal)
-            .copies(cstr!("1"));
+            .copies(1);
 
         printer.print_documents(JobTitle::new(docname).unwrap(), options, vec![document])?;
 

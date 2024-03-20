@@ -1,32 +1,13 @@
-use super::{ffi, options::Options};
+use super::{
+    ffi,
+    options::{Options, OptionsValues},
+    utils::{cstring_wrapper, cups_error},
+};
 use core::ffi::CStr;
 use std::{
     io,
     ptr::{null, null_mut},
 };
-
-macro_rules! cstring_wrapper {
-    ($($name:ident),* $(,)?) => {
-        $(
-            pub struct $name(::std::ffi::CString);
-
-            impl $name {
-                pub fn new(name: &str) -> Option<Self> {
-                    let name = ::std::ffi::CString::new(name).ok()?;
-                    Some(Self(name))
-                }
-            }
-
-            impl ::std::ops::Deref for $name {
-                type Target = ::std::ffi::CString;
-
-                fn deref(&self) -> &Self::Target {
-                    &self.0
-                }
-            }
-        )*
-    };
-}
 
 cstring_wrapper!(DeviceName, JobTitle);
 
@@ -45,8 +26,10 @@ pub enum DocumentType {
     PDF,
 }
 
-#[derive(Clone, Copy)]
-pub struct JobId(i32);
+pub struct Job {
+    pub id: i32,
+    pub options: OptionsValues,
+}
 
 impl Printer {
     pub fn get_default() -> Option<Self> {
@@ -78,17 +61,17 @@ impl Printer {
             let document_name = document.file_name.clone();
             let last_document = documents.peek().is_none();
 
-            match document.send(self.name(), job, last_document) {
+            match document.send(self.name(), &job, last_document) {
                 Ok(()) => {
                     log::debug!(
                         "Document '{document_name}' successfully uploaded to the job #{job_id} to the printer '{printer_name}'",
                         document_name = document_name.to_string_lossy(),
-                        job_id = job.0,
+                        job_id = job.id,
                         printer_name = self.name().to_string_lossy()
                     );
                 }
                 Err(err) => {
-                    unsafe { ffi::cupsCancelJob(self.name().as_ptr(), job.0) };
+                    unsafe { ffi::cupsCancelJob(self.name().as_ptr(), job.id) };
                     return Err(err);
                 }
             }
@@ -97,24 +80,8 @@ impl Printer {
         Ok(())
     }
 
-    fn create_job(&self, title: &CStr, options: Options) -> io::Result<JobId> {
-        let (options, num_options) = options.into_raw();
-
-        let job_id = unsafe {
-            ffi::cupsCreateJob(
-                null_mut(),
-                self.name().as_ptr(),
-                title.as_ptr(),
-                num_options,
-                options,
-            )
-        };
-
-        if job_id == 0 {
-            return Err(io::Error::other(cups_error().unwrap()));
-        }
-
-        Ok(JobId(job_id))
+    fn create_job(&self, title: &CStr, options: Options) -> io::Result<Job> {
+        options.create_job(self.name(), title)
     }
 }
 
@@ -125,7 +92,7 @@ impl Drop for Printer {
 }
 
 impl Document<'_> {
-    fn send(mut self, device_name: &CStr, job: JobId, last_document: bool) -> io::Result<()> {
+    fn send(mut self, device_name: &CStr, job: &Job, last_document: bool) -> io::Result<()> {
         self.start(device_name, job, last_document)?;
         self.stream()?;
         self.finish(device_name)?;
@@ -133,7 +100,7 @@ impl Document<'_> {
         Ok(())
     }
 
-    fn start(&self, device_name: &CStr, job: JobId, last_document: bool) -> io::Result<()> {
+    fn start(&self, device_name: &CStr, job: &Job, last_document: bool) -> io::Result<()> {
         let format: &[u8] = match self.ty {
             DocumentType::PlainText => ffi::CUPS_FORMAT_TEXT,
             DocumentType::PDF => ffi::CUPS_FORMAT_PDF,
@@ -143,7 +110,7 @@ impl Document<'_> {
             ffi::cupsStartDocument(
                 null_mut(),
                 device_name.as_ptr(),
-                job.0,
+                job.id,
                 self.file_name.as_ptr(),
                 format.as_ptr().cast(),
                 if last_document { 1 } else { 0 },
@@ -187,14 +154,4 @@ impl Document<'_> {
             Err(io::Error::other(cups_error().unwrap()))
         }
     }
-}
-
-fn cups_error() -> Option<String> {
-    let error = unsafe { ffi::cupsLastErrorString().as_ref() }?;
-
-    let error = unsafe { CStr::from_ptr(error as *const i8) }
-        .to_string_lossy()
-        .into_owned();
-
-    Some(error)
 }
