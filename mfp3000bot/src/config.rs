@@ -10,6 +10,7 @@ pub struct Config {
     pub devices: Devices,
 
     pub scanner_common: CommonScanner,
+    pub print: Print,
 
     #[serde(default = "Default::default")]
     pub scanner: HashMap<String, HashMap<BString, BString>>,
@@ -28,7 +29,14 @@ pub struct Devices {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct CommonScanner {
+pub struct Print {
+    pub paper_size: libcups::options::MediaFormat,
+    pub orientation: libcups::options::Orientation,
+    pub sides: libcups::options::Sides,
+    pub color_mode: libcups::options::ColorMode,
+    pub quality: libcups::options::PrintQuality,
+    pub copies: usize,
+}
     pub preview_dpi: u16,
     pub page_dpi: u16,
     pub page_quality: u8,

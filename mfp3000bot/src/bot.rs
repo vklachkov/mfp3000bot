@@ -228,7 +228,12 @@ async fn print_document(globals: Arc<Globals>, bot: Bot, msg: Message) -> anyhow
         return send_msg(&bot, msg.chat.id, UNSUPPORTED_DOCUMENT).await;
     };
 
-    match print::print_remote_file(printer, &document_name, &document_url) {
+    match print::print_remote_file(
+        printer,
+        &document_name,
+        &document_url,
+        &globals.config.print,
+    ) {
         Ok(()) => {
             log::debug!("Document '{document_name}' successfully printed");
             send_msg(&bot, msg.chat.id, &SUCCESSFUL_PRINT(&document_name)).await?;

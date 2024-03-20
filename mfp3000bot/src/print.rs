@@ -1,19 +1,25 @@
+use crate::config;
 use anyhow::{anyhow, bail, Context};
+use libcups::{
+    document::{Document, DocumentName, DocumentType},
+    options::Options,
+    printer::{DeviceName, JobTitle, Printer},
+};
 use reqwest::{
     blocking::{get, Client},
     Url,
-};
-use simple_cups::{
-    document::{Document, DocumentName, DocumentType},
-    options::{ColorMode, MediaFormat, Options, Orientation, PrintQuality, Sides},
-    printer::{DeviceName, JobTitle, Printer},
 };
 use std::{
     io::{self, Read},
     time::Instant,
 };
 
-pub fn print_remote_file(printer: &str, docname: &String, url: &Url) -> anyhow::Result<()> {
+pub fn print_remote_file(
+    printer: &str,
+    docname: &String,
+    url: &Url,
+    config: &config::Print,
+) -> anyhow::Result<()> {
     tokio::task::block_in_place(|| {
         let Some(printer) = Printer::find_by_name(DeviceName::new(printer).unwrap()) else {
             bail!("printer '{printer}' not found");
@@ -40,14 +46,13 @@ pub fn print_remote_file(printer: &str, docname: &String, url: &Url) -> anyhow::
 
         let document = Document::new(DocumentName::new(docname).unwrap(), ty, &mut reader);
 
-        // TODO: Move options to the config.
         let options = Options::default()
-            .media_format(MediaFormat::A4)
-            .orientation(Orientation::Portrait)
-            .sides(Sides::OneSide)
-            .color_mode(ColorMode::Monochrome)
-            .quality(PrintQuality::Normal)
-            .copies(1);
+            .media_format(config.paper_size)
+            .orientation(config.orientation)
+            .sides(config.sides)
+            .color_mode(config.color_mode)
+            .quality(config.quality)
+            .copies(config.copies);
 
         printer.print_documents(JobTitle::new(docname).unwrap(), options, vec![document])?;
 
