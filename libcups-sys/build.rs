@@ -9,10 +9,11 @@ fn main() {
 }
 
 fn check_cups() {
-    pkg_config::Config::new()
-        .atleast_version("2.0.0")
-        .probe("cups")
-        .unwrap();
+    // FIXME: cups.pc doesn't exists for Debian 11 that used in build image.
+    // pkg_config::Config::new()
+    //     .atleast_version("2.3.3")
+    //     .probe("cups")
+    //     .unwrap();
 }
 
 fn bindgen_cups() {
