@@ -402,7 +402,7 @@ async fn scan_first_page_task(
     mode: ScanMode,
     cancel: oneshot::Receiver<()>,
 ) -> anyhow::Result<()> {
-    let dpi = globals.config.scanner_common.page_dpi;
+    let dpi = globals.config.scan.page_dpi;
     let scan_result = scan_page(globals, &bot, &dialogue_message, dpi, cancel).await?;
     match scan_result {
         ScanResult::Done(page) => match mode {
@@ -475,7 +475,7 @@ where
     Fn: FnOnce(Bot, BotDialogue, Option<Message>) -> F,
     F: Future<Output = anyhow::Result<()>>,
 {
-    let dpi = globals.config.scanner_common.preview_dpi;
+    let dpi = globals.config.scan.preview_dpi;
     let scan_result = scan_page(globals, &bot, &dialogue_message, dpi, cancel).await?;
     match scan_result {
         ScanResult::Done(jpeg) => {
@@ -533,7 +533,7 @@ async fn scan_page(
                 return Ok(ScanResult::Error(err));
             }
             ScanState::Cancelled => {
-                edit_msg(bot, message, SCAN_CANCELLED).await?;
+                return Ok(ScanResult::Cancelled);
             }
         };
     }
@@ -740,7 +740,7 @@ async fn scan_document_page_task(
     cancel: oneshot::Receiver<()>,
     mut pages: Pages,
 ) -> anyhow::Result<()> {
-    let dpi = globals.config.scanner_common.page_dpi;
+    let dpi = globals.config.scan.page_dpi;
     let scan_result = scan_page(globals, &bot, &dialogue_message, dpi, cancel).await?;
     match scan_result {
         ScanResult::Done(page) => {

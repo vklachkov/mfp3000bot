@@ -51,7 +51,6 @@ impl Drop for Scanner<'_> {
     fn drop(&mut self) {
         log::trace!("Call ffi::sane_close({:p})", self.handle);
         unsafe { ffi::sane_close(self.handle) };
-        log::trace!("ffi::sane_close complete")
     }
 }
 

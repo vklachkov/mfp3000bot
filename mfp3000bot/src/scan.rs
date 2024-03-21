@@ -1,9 +1,9 @@
 use crate::config::Config;
 use anyhow::{anyhow, bail, Context};
-use bstr::ByteSlice;
+use bstr::{BStr, BString};
 use lazy_static::lazy_static;
-use simple_sane::{Backend, FrameFormat, OptionValue, Parameters, Scanner};
-use std::{io::Read, thread};
+use simple_sane::{Backend, FrameFormat, OptionValue, Parameters, Scanner, ScannerOption};
+use std::{collections::HashMap, io::Read, thread};
 use tokio::sync::{mpsc, oneshot};
 
 lazy_static! {
@@ -162,70 +162,86 @@ fn scan_page(
     send_state!(ScanState::CompressToJpeg);
 
     let raw_image = raw_image(parameters, pixels)?;
-    let jpeg = encode_jpeg(raw_image, config.scanner_common.page_quality);
+    let jpeg = encode_jpeg(raw_image, config.scan.page_quality);
 
     send_state!(ScanState::Done(jpeg));
 
     Ok(true)
 }
 
+#[rustfmt::skip]
 fn setup_scanner(scanner: &mut Scanner<'_>, config: &Config, dpi: u16) {
+    log::debug!("Start device setup");
+
     let device_name = scanner.get_device().name.to_string();
 
     let options = scanner.options();
-    log::debug!("Start device setup. Available {options:#?}");
+    log::debug!("Device options: {options:#?}");
 
-    'setup: for (i, option) in options.into_iter().enumerate() {
-        let Some(option_name) = option.name else {
+    let values = get_options_values(&device_name, config);
+    log::debug!("Options values from config: {values:#?}");
+
+    for (i, option) in options.into_iter().enumerate() {
+        let Some(option_name) = option.name.filter(|name| !name.is_empty()) else {
             log::debug!("Skip unnamed option #{i}");
             continue;
         };
 
-        if option_name.is_empty() {
-            log::debug!("Skip unnamed option #{i}");
-            continue;
-        }
-
         if option_name == "resolution" {
-            if let Err(err) = option.set_value(OptionValue::Int(dpi as i32)) {
-                log::warn!("Failed to set DPI (option '{option_name}', #{i}): {err}. Trying to use value from config");
-            } else {
-                log::debug!("Successfully set {dpi} DPI (option '{option_name}', #{i})");
-                continue;
-            }
-        }
-
-        'custom_value: {
-            let Some(config) = config.scanner.get(&device_name) else {
-                log::debug!("No custom options for device '{device_name}'. Use default values");
-                break 'custom_value;
-            };
-
-            let Some(value) = config.get(option_name) else {
-                log::debug!("No custom value for option '{option_name}' (#{i}). Use default value");
-                break 'custom_value;
-            };
-
-            if let Err(err) = option.set_value(OptionValue::String(value.as_bstr())) {
-                log::warn!(
-                    "Failed to set '{value}' value for option '{option_name}' (#{i}): {err}"
-                );
-                break 'custom_value;
-            } else {
-                log::debug!("Successfully set value '{value}' for option '{option_name}' (#{i})");
-                continue 'setup;
-            }
-        }
-
-        if option.is_auto_settable() {
-            if let Err(err) = option.set_auto() {
-                log::warn!("Failed to auto configure option '{option_name}' (#{i}): {err}");
-            } else {
-                log::debug!("Successfully set automatic value for option '{option_name}' (#{i})");
-            }
+            set_option_value_or_use_default(&option, &OptionValue::Int(dpi as i32));
+        } else if let Some(value) = values.get(option_name) {
+            set_option_value_or_use_default(&option, value);
         } else {
-            log::debug!("Option '{option_name}' (#{i}) does not support auto value, skip");
+            log::debug!("Value for option '{option_name}' is not specified. Trying to use a default value");
+            set_option_default_value(&option);
         }
+    }
+}
+
+fn get_options_values<'c>(
+    device_name: &str,
+    config: &'c Config,
+) -> HashMap<BString, OptionValue<'c>> {
+    let mut values = HashMap::new();
+
+    for (name, value) in &config.scan.common_options {
+        values.insert(name.to_owned(), OptionValue::String(value.as_ref()));
+    }
+
+    if let Some(device_specific_values) = config.scanner.get(device_name) {
+        for (name, value) in device_specific_values {
+            values.insert(name.to_owned(), OptionValue::String(value.as_ref()));
+        }
+    }
+
+    values
+}
+
+fn set_option_value_or_use_default(option: &ScannerOption, value: &OptionValue) {
+    let option_name = option.name.unwrap_or_else(|| BStr::new(b"noname"));
+
+    if let Err(err) = option.set_value(value) {
+        log::warn!("Failed to set option '{option_name}' to value '{value:?}': {err}. Trying to use a default value");
+    } else {
+        log::debug!("Successfully set option '{option_name}' to value '{value:?}'");
+        return;
+    }
+
+    set_option_default_value(option);
+}
+
+fn set_option_default_value(option: &ScannerOption) {
+    let option_name = option.name.unwrap_or_else(|| BStr::new(b"noname"));
+
+    if !option.is_auto_settable() {
+        log::debug!("Option '{option_name}' doesn't have default value");
+        return;
+    }
+
+    if let Err(err) = option.set_auto() {
+        log::warn!("Failed to set '{option_name}' to default value: {err}");
+    } else {
+        log::debug!("Successfully set option '{option_name}' to auto value");
     }
 }
 
