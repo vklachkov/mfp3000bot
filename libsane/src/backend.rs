@@ -1,10 +1,10 @@
 use crate::{
-    ffi,
     result::{sane_try, Result, SaneError},
     utils::slice_from_c_array,
     Device,
 };
 use bstr::BStr;
+use libsane_sys::*;
 use std::{fmt::Debug, marker::PhantomData, ptr::null_mut};
 
 pub struct Backend {
@@ -13,8 +13,8 @@ pub struct Backend {
 
 impl Backend {
     pub fn new() -> Result<Self> {
-        log::trace!("Call ffi::sane_init(0x0, 0x0)");
-        sane_try!(ffi::sane_init(null_mut(), None));
+        log::trace!("Call sane_init(0x0, 0x0)");
+        sane_try!(sane_init(null_mut(), None));
 
         Ok(Self {
             __private_field: (),
@@ -46,11 +46,11 @@ impl Backend {
         Ok(device)
     }
 
-    fn get_devices(&self) -> Result<*const *const ffi::SANE_Device> {
+    fn get_devices(&self) -> Result<*const *const SANE_Device> {
         let mut device_list = null_mut();
 
-        log::trace!("Call ffi::sane_get_devices({:p}, {})", &mut device_list, 0);
-        sane_try!(ffi::sane_get_devices(&mut device_list, 0));
+        log::trace!("Call sane_get_devices({:p}, {})", &mut device_list, 0);
+        sane_try!(sane_get_devices(&mut device_list, 0));
 
         Ok(device_list)
     }
@@ -64,7 +64,7 @@ impl Debug for Backend {
 
 impl Drop for Backend {
     fn drop(&mut self) {
-        log::trace!("Call ffi::sane_exit()");
-        unsafe { ffi::sane_exit() };
+        log::trace!("Call sane_exit()");
+        unsafe { sane_exit() };
     }
 }

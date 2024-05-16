@@ -2,7 +2,7 @@ use crate::config::Config;
 use anyhow::{anyhow, bail, Context};
 use bstr::{BStr, BString};
 use lazy_static::lazy_static;
-use simple_sane::{Backend, FrameFormat, OptionValue, Parameters, Scanner, ScannerOption};
+use libsane::{Backend, FrameFormat, OptionValue, Parameters, Scanner, ScannerOption};
 use std::{collections::HashMap, io::Read, thread};
 use tokio::sync::{mpsc, oneshot};
 

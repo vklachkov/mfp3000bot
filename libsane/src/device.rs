@@ -1,5 +1,6 @@
-use crate::{ffi, result::sane_try, utils::cstr2bstr, Backend, SaneError};
+use crate::{result::sane_try, utils::cstr2bstr, Backend, SaneError};
 use bstr::BStr;
+use libsane_sys::*;
 use std::{ffi::CStr, ops::Deref, ptr::null_mut};
 
 #[derive(Debug, Clone, Copy)]
@@ -13,13 +14,13 @@ pub struct Device<'b> {
 }
 
 impl<'s> Device<'s> {
-    pub(crate) fn new(backend: &'s Backend, device: &'s ffi::SANE_Device) -> Self {
+    pub(crate) fn new(backend: &'s Backend, device: &'s SANE_Device) -> Self {
         Device {
             backend,
-            name: unsafe { cstr2bstr(device.name).expect("name should be not null") },
-            vendor: unsafe { cstr2bstr(device.vendor).expect("vendor should be not null") },
-            model: unsafe { cstr2bstr(device.model).expect("model should be not null") },
-            ty: unsafe { cstr2bstr(device.type_).expect("type should be not null") },
+            name: unsafe { cstr2bstr(device.name).expect("name should not be null") },
+            vendor: unsafe { cstr2bstr(device.vendor).expect("vendor should not be null") },
+            model: unsafe { cstr2bstr(device.model).expect("model should not be null") },
+            ty: unsafe { cstr2bstr(device.type_).expect("type should not be null") },
         }
     }
 }

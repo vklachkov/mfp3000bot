@@ -1,9 +1,9 @@
 use crate::{
-    ffi,
     options::{ScannerOption, ScannerOptions},
     result::{from_status, sane_try},
     Device, Parameters, SaneError,
 };
+use libsane_sys::*;
 use std::{
     ffi::{c_void, CStr},
     io,
@@ -21,8 +21,8 @@ impl<'b> Scanner<'b> {
     pub fn new(device: Device<'b>) -> Result<Self, SaneError> {
         let mut handle = null_mut();
 
-        log::trace!("Call ffi::sane_open('{}', {:p})", device.name, &mut handle);
-        sane_try!(ffi::sane_open(device.name.as_ptr().cast(), &mut handle));
+        log::trace!("Call sane_open('{}', {:p})", device.name, &mut handle);
+        sane_try!(sane_open(device.name.as_ptr().cast(), &mut handle));
 
         Ok(Self { device, handle })
     }
@@ -32,8 +32,8 @@ impl<'b> Scanner<'b> {
     }
 
     pub fn start<'d>(&'d mut self) -> Result<PageReader<'b, 'd>, SaneError> {
-        log::trace!("Call ffi::sane_start({:p})", self.handle);
-        sane_try!(ffi::sane_start(self.handle));
+        log::trace!("Call sane_start({:p})", self.handle);
+        sane_try!(sane_start(self.handle));
 
         Ok(PageReader(self))
     }
@@ -49,8 +49,8 @@ impl<'b> Scanner<'b> {
 
 impl Drop for Scanner<'_> {
     fn drop(&mut self) {
-        log::trace!("Call ffi::sane_close({:p})", self.handle);
-        unsafe { ffi::sane_close(self.handle) };
+        log::trace!("Call sane_close({:p})", self.handle);
+        unsafe { sane_close(self.handle) };
     }
 }
 
@@ -61,8 +61,8 @@ impl<'b, 'd> PageReader<'b, 'd> {
     pub fn get_parameters(&mut self) -> Result<Parameters, SaneError> {
         let mut params = unsafe { core::mem::zeroed() };
 
-        log::trace!("Call ffi::sane_get_parameters({:p}, {:p})", self.0.handle, &mut params);
-        sane_try!(ffi::sane_get_parameters(self.0.handle, &mut params));
+        log::trace!("Call sane_get_parameters({:p}, {:p})", self.0.handle, &mut params);
+        sane_try!(sane_get_parameters(self.0.handle, &mut params));
 
         Ok(Parameters {
             format: params.format.into(),
@@ -99,7 +99,7 @@ impl io::Read for PageReader<'_, '_> {
         let mut count = 0;
 
         log::trace!(
-            "Call ffi::sane_read({:p}, {:p}, {}, {:p})",
+            "Call sane_read({:p}, {:p}, {}, {:p})",
             self.0.handle,
             buf.as_mut_ptr(),
             buf.len().try_into().unwrap_or(i32::MAX),
@@ -107,7 +107,7 @@ impl io::Read for PageReader<'_, '_> {
         );
 
         let read_status = unsafe {
-            ffi::sane_read(
+            sane_read(
                 self.0.handle,
                 buf.as_mut_ptr(),
                 buf.len().try_into().unwrap_or(i32::MAX),
@@ -128,7 +128,7 @@ impl io::Read for PageReader<'_, '_> {
 
 impl Drop for PageReader<'_, '_> {
     fn drop(&mut self) {
-        log::trace!("Call ffi::sane_cancel({:p})", self.0.handle);
-        unsafe { ffi::sane_cancel(self.0.handle) };
+        log::trace!("Call sane_cancel({:p})", self.0.handle);
+        unsafe { sane_cancel(self.0.handle) };
     }
 }

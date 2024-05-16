@@ -1,4 +1,4 @@
-use crate::ffi;
+use libsane_sys::*;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Parameters {
@@ -19,14 +19,14 @@ pub enum FrameFormat {
     Blue,
 }
 
-impl From<ffi::SANE_Frame> for FrameFormat {
-    fn from(value: ffi::SANE_Frame) -> Self {
+impl From<SANE_Frame> for FrameFormat {
+    fn from(value: SANE_Frame) -> Self {
         match value {
-            ffi::SANE_Frame_SANE_FRAME_GRAY => Self::Gray,
-            ffi::SANE_Frame_SANE_FRAME_RGB => Self::RGB,
-            ffi::SANE_Frame_SANE_FRAME_RED => Self::Red,
-            ffi::SANE_Frame_SANE_FRAME_GREEN => Self::Green,
-            ffi::SANE_Frame_SANE_FRAME_BLUE => Self::Blue,
+            SANE_Frame_SANE_FRAME_GRAY => Self::Gray,
+            SANE_Frame_SANE_FRAME_RGB => Self::RGB,
+            SANE_Frame_SANE_FRAME_RED => Self::Red,
+            SANE_Frame_SANE_FRAME_GREEN => Self::Green,
+            SANE_Frame_SANE_FRAME_BLUE => Self::Blue,
             _ => panic!("invalid sane frame format {value}"),
         }
     }

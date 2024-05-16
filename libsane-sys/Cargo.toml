@@ -1,0 +1,10 @@
+[package]
+name = "libsane-sys"
+version = "1.0.14"
+edition = "2021"
+
+[dependencies]
+
+[build-dependencies]
+bindgen = "0.69.2"
+pkg-config = "0.3.30"

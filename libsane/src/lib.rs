@@ -1,8 +1,7 @@
-#![allow(unused)]
+#![allow(unused, non_upper_case_globals)]
 
 mod backend;
 mod device;
-mod ffi;
 mod options;
 mod parameters;
 mod result;

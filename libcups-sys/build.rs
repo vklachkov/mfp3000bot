@@ -9,7 +9,7 @@ fn main() {
 }
 
 fn check_cups() {
-    // FIXME: cups.pc doesn't exists for Debian 11 that used in build image.
+    // FIXME: cups.pc doesn't exists on Debian 11 that used in build image.
     // pkg_config::Config::new()
     //     .atleast_version("2.3.3")
     //     .probe("cups")

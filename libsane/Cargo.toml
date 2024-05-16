@@ -1,5 +1,5 @@
 [package]
-name = "simple-sane"
+name = "libsane"
 version = "1.0.0"
 edition = "2021"
 
@@ -9,8 +9,6 @@ path = "src/lib.rs"
 [dependencies]
 bitflags = "2.4.2"
 bstr = "1.9.0"
+libsane-sys = { version = "1.0.14", path = "../libsane-sys" }
 log = "0.4.20"
 thiserror = "1.0.56"
-
-[build-dependencies]
-bindgen = "0.69.2"

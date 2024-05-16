@@ -4,7 +4,8 @@ members = [
     "libcups-sys",
     "libcups",
 
-    "simple-sane",
+    "libsane-sys",
+    "libsane",
     
     "libjpeg-sys",
     "libjpeg",

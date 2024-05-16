@@ -4,7 +4,13 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=ffi/wrapper.h");
 
-    bindgen_sane()
+    check_sane();
+    bindgen_sane();
+}
+
+fn check_sane() {
+    // TODO: How to check sane version at compile time,
+    // when pkg-config file does not exists?
 }
 
 fn bindgen_sane() {

@@ -10,14 +10,15 @@ base64 = "0.22.0"
 bstr = { version = "1.9.0", features = ["serde"] }
 iter-read = "1.0.1"
 lazy_static = "1.4.0"
-libcups = { version = "1.0.0", path = "../libcups" }
+libcups = { path = "../libcups" }
 libjpeg = { path = "../libjpeg" }
+libsane = { path = "../libsane" }
 log = "0.4.20"
 once_cell = "1.19.0"
+# At 16-05-2024 fix for RPi Zero (https://github.com/fschutt/printpdf/pull/173) is not released. 
 printpdf = { git = "https://github.com/fschutt/printpdf.git", rev = "fbc7d69", default-features = false }
-reqwest = { version = "0.11.23", features = ["blocking"] }
+reqwest = { version = "0.12.4", features = ["blocking"] }
 serde = { version = "1.0.196", features = ["derive"] }
-simple-sane = { path = "../simple-sane" }
 simple_logger = "4.3.3"
 strum = { version = "0.26.1", features = ["derive"] }
 teloxide = { version = "0.12.2", features = ["macros"] }
