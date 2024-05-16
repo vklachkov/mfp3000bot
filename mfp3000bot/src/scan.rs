@@ -264,7 +264,7 @@ fn raw_image(parameters: Parameters, pixels: Vec<u8>) -> anyhow::Result<libjpeg:
 }
 
 fn encode_jpeg(image: libjpeg::RawImage, output_quality: u8) -> Jpeg {
-    let bytes = unsafe { libjpeg::compress_to_jpeg(&image, output_quality) };
+    let bytes = libjpeg::compress_to_jpeg(&image, output_quality);
 
     Jpeg {
         bytes,
