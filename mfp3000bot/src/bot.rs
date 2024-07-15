@@ -3,7 +3,7 @@ use crate::{
     bot_utils::*,
     config::Config,
     pdf_builder::PdfBuilder,
-    print,
+    print::{self, DocumentFormat},
     scan::{self, Jpeg, ScanState},
 };
 use reqwest::Url;
@@ -224,25 +224,20 @@ async fn print_document(globals: Arc<Globals>, bot: Bot, msg: Message) -> anyhow
         .document()
         .expect("Message must have document attachment");
 
-    let Some((document_name, document_url)) = get_document(&globals, &bot, document).await? else {
+    let Some((name, format, url)) = get_document(&globals, &bot, document).await? else {
         return send_msg(&bot, msg.chat.id, UNSUPPORTED_DOCUMENT).await;
     };
 
-    match print::print_remote_file(
-        printer,
-        &document_name,
-        &document_url,
-        &globals.config.print,
-    ) {
+    match print::print_remote_file(printer, &name, format, &url, &globals.config.print) {
         Ok(()) => {
-            log::debug!("Document '{document_name}' successfully printed");
-            send_msg(&bot, msg.chat.id, &SUCCESSFUL_PRINT(&document_name)).await?;
+            log::debug!("Document '{name}' successfully printed");
+            send_msg(&bot, msg.chat.id, &SUCCESSFUL_PRINT(&name)).await?;
         }
 
         // TODO: Отправлять в сообщение человекочитаемую ошибку печати.
         Err(err) => {
-            log::error!("Failed to print document '{document_name}': {err:#}");
-            send_msg(&bot, msg.chat.id, &FAILED_TO_PRINT(&document_name)).await?;
+            log::error!("Failed to print document '{name}': {err:#}");
+            send_msg(&bot, msg.chat.id, &FAILED_TO_PRINT(&name)).await?;
         }
     }
 
@@ -257,20 +252,16 @@ async fn get_document(
     globals: &Globals,
     bot: &Bot,
     doc: &Document,
-) -> anyhow::Result<Option<(String, Url)>> {
+) -> anyhow::Result<Option<(String, DocumentFormat, Url)>> {
     let file = bot.get_file(&doc.file.id).await?;
 
     let Some(file_name) = doc.file_name.clone() else {
         return Ok(None);
     };
 
-    let lowercase_file_name = file_name.to_lowercase();
-    if !lowercase_file_name.ends_with(".pdf")
-        && !lowercase_file_name.ends_with(".docx")
-        && !lowercase_file_name.ends_with(".txt")
-    {
+    let Some(format) = DocumentFormat::from_document_name(&file_name) else {
         return Ok(None);
-    }
+    };
 
     // TODO: Оформить PR в Teloxide и убрать ручную сборку ссылки.
     let token = &globals.config.telegram.token;
@@ -280,7 +271,7 @@ async fn get_document(
         .join(&format!("file/bot{token}/{file_path}"))
         .expect("url should be valid");
 
-    Ok(Some((file_name, file_url)))
+    Ok(Some((file_name, format, file_url)))
 }
 
 /// Команда `/scan`.

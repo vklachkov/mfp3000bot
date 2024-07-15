@@ -14,9 +14,43 @@ use std::{
     time::Instant,
 };
 
+#[derive(Clone, Copy, Debug)]
+pub enum DocumentFormat {
+    Text,
+    Pdf,
+    Word,
+}
+
+impl DocumentFormat {
+    pub fn from_document_name(doc: &str) -> Option<Self> {
+        let doc = doc.to_lowercase();
+
+        if doc.ends_with(".txt") {
+            Some(DocumentFormat::Text)
+        } else if doc.ends_with(".pdf") {
+            Some(DocumentFormat::Pdf)
+        } else if doc.ends_with(".docx") || doc.ends_with(".doc") {
+            Some(DocumentFormat::Word)
+        } else {
+            None
+        }
+    }
+}
+
+impl From<DocumentFormat> for DocumentType {
+    fn from(value: DocumentFormat) -> Self {
+        match value {
+            DocumentFormat::Text => DocumentType::PlainText,
+            DocumentFormat::Pdf => DocumentType::Pdf,
+            DocumentFormat::Word => DocumentType::Pdf,
+        }
+    }
+}
+
 pub fn print_remote_file(
     printer: &str,
-    docname: &String,
+    document_name: &String,
+    document_format: DocumentFormat,
     url: &Url,
     config: &config::Print,
 ) -> anyhow::Result<()> {
@@ -27,24 +61,25 @@ pub fn print_remote_file(
 
         let document_reader = get(url.to_owned()).map_err(|err| {
             anyhow!(
-                "failed to download document '{docname}': {}",
+                "failed to download document '{document_name}': {}",
                 err.without_url()
             )
         })?;
 
         // TODO: Support images.
-        let (ty, mut reader): (_, Box<dyn io::Read>) = if docname.ends_with(".txt") {
-            (DocumentType::PlainText, Box::new(document_reader))
-        } else if docname.ends_with(".pdf") {
-            (DocumentType::Pdf, Box::new(document_reader))
-        } else if docname.ends_with(".docx") {
-            let pdf = docx_to_pdf(document_reader)?;
-            (DocumentType::Pdf, Box::new(io::Cursor::new(pdf)))
-        } else {
-            bail!("Unsupported file format");
+        let document_type = document_format.into();
+        let mut document_reader = match document_format {
+            DocumentFormat::Word => {
+                Box::new(io::Cursor::new(docx_to_pdf(document_reader)?)) as Box<dyn io::Read>
+            }
+            _ => Box::new(document_reader),
         };
 
-        let document = Document::new(DocumentName::new(docname).unwrap(), ty, &mut reader);
+        let document = Document::new(
+            DocumentName::new(document_name).unwrap(),
+            document_type,
+            &mut document_reader,
+        );
 
         let options = Options::default()
             .media_format(config.paper_size)
@@ -54,7 +89,11 @@ pub fn print_remote_file(
             .quality(config.quality)
             .copies(config.copies);
 
-        printer.print_documents(JobTitle::new(docname).unwrap(), options, vec![document])?;
+        printer.print_documents(
+            JobTitle::new(document_name).unwrap(),
+            options,
+            vec![document],
+        )?;
 
         Ok(())
     })
