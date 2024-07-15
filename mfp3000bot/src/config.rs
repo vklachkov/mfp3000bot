@@ -30,12 +30,11 @@ pub struct Devices {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Print {
-    pub paper_size: libcups::options::MediaFormat,
-    pub orientation: libcups::options::Orientation,
-    pub sides: libcups::options::Sides,
-    pub color_mode: libcups::options::ColorMode,
-    pub quality: libcups::options::PrintQuality,
-    pub copies: usize,
+    pub paper_size: Option<libcups::options::MediaFormat>,
+    pub orientation: Option<libcups::options::Orientation>,
+    pub sides: Option<libcups::options::Sides>,
+    pub color_mode: Option<libcups::options::ColorMode>,
+    pub quality: Option<libcups::options::PrintQuality>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

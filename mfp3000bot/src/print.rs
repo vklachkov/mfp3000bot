@@ -81,13 +81,7 @@ pub fn print_remote_file(
             &mut document_reader,
         );
 
-        let options = Options::default()
-            .media_format(config.paper_size)
-            .orientation(config.orientation)
-            .sides(config.sides)
-            .color_mode(config.color_mode)
-            .quality(config.quality)
-            .copies(config.copies);
+        let options = config_to_options(config);
 
         printer.print_documents(
             JobTitle::new(document_name).unwrap(),
@@ -97,6 +91,32 @@ pub fn print_remote_file(
 
         Ok(())
     })
+}
+
+fn config_to_options(config: &config::Print) -> Options {
+    let mut options = Options::default();
+
+    if let Some(paper_size) = config.paper_size {
+        options = options.media_format(paper_size);
+    }
+
+    if let Some(orientation) = config.orientation {
+        options = options.orientation(orientation);
+    }
+
+    if let Some(sides) = config.sides {
+        options = options.sides(sides);
+    }
+
+    if let Some(color_mode) = config.color_mode {
+        options = options.color_mode(color_mode);
+    }
+
+    if let Some(quality) = config.quality {
+        options = options.quality(quality);
+    }
+
+    options
 }
 
 fn docx_to_pdf(mut reader: impl io::Read) -> anyhow::Result<Vec<u8>> {
