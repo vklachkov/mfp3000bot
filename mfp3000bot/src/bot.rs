@@ -181,7 +181,11 @@ fn schema() -> UpdateHandler<anyhow::Error> {
 ///
 /// К сожалению, Telegram не даёт скрыть бота из поиска и приходится делать фильтр.
 async fn filter_users(globals: Arc<Globals>, bot: Bot, message: Message) -> bool {
-    let Some(username) = message.from().and_then(|from| from.username.as_ref()) else {
+    let Some(username) = message
+        .from
+        .as_ref()
+        .and_then(|from| from.username.as_ref())
+    else {
         return false;
     };
 
@@ -520,7 +524,7 @@ async fn scan_page(
     while let Some(state) = state_receiver.recv().await {
         match state {
             ScanState::Prepair => {
-                edit_interative(bot, message, SCAN_PREPAIR, &*SCAN_CANCEL).await?;
+                edit_msg(bot, message, t!("scan_prepair")).await?;
             }
             ScanState::Progress => {
                 edit_interative(bot, message, t!("scan_progress"), &*SCAN_CANCEL).await?;
@@ -877,11 +881,13 @@ async fn show_rename_document_dialog(
 }
 
 async fn receive_document_rename_cancel(
+    globals: Arc<Globals>,
     bot: Bot,
     dialogue: BotDialogue,
     (dialogue_message, pages): (Message, Pages), // From `State::ReceiveScannedDocumentName`.
 ) -> anyhow::Result<()> {
     send_pdf(
+        &globals,
         &bot,
         &dialogue,
         Some(dialogue_message),
@@ -896,6 +902,7 @@ async fn receive_document_rename_cancel(
 }
 
 async fn receive_document_name(
+    globals: Arc<Globals>,
     bot: Bot,
     dialogue: BotDialogue,
     msg: Message,
@@ -915,6 +922,7 @@ async fn receive_document_name(
 }
 
 async fn send_pdf(
+    globals: &Arc<Globals>,
     bot: &Bot,
     dialogue: &BotDialogue,
     dialogue_message: Option<Message>,
@@ -927,15 +935,19 @@ async fn send_pdf(
             dialogue_message.id,
             t!("scan_prepare_pdf"),
         )
-            .await?
+        .await?
     } else {
         bot.send_message(dialogue.chat_id(), t!("scan_prepare_pdf"))
             .await?
     };
 
-    let pdf = tokio::task::spawn_blocking(|| convert_pages_to_document(pages))
-        .await
-        .unwrap();
+    let pages_dpi = globals.config.scan.page_dpi as f32;
+    let pdf = tokio::task::spawn_blocking({
+        let document_title = name.to_string();
+        move || collect_images_to_pdf(document_title, pages_dpi, pages)
+    })
+    .await
+    .unwrap();
 
     edit_msg(bot, &dialogue_message, t!("multipage_result")).await?;
 
@@ -947,12 +959,11 @@ async fn send_pdf(
     Ok(())
 }
 
-fn convert_pages_to_document(pages: Vec<Jpeg>) -> Vec<u8> {
-    // TODO: Remove hardcoded dpi
-    let pdf_builder = PdfBuilder::new("Document", 300.0);
+fn collect_images_to_pdf(title: String, dpi: f32, images: Vec<Jpeg>) -> Vec<u8> {
+    let mut pdf_builder = PdfBuilder::new(&title, dpi);
 
-    for page in pages {
-        pdf_builder.add_page(page).unwrap();
+    for page in images {
+        pdf_builder.add_image(page).unwrap();
     }
 
     let mut pdf = Vec::new();
