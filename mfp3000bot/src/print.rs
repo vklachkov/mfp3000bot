@@ -9,10 +9,7 @@ use reqwest::{
     blocking::{get, Client},
     Url,
 };
-use std::{
-    io::{self, Read},
-    time::Instant,
-};
+use std::io::{self, Read};
 
 #[derive(Clone, Copy, Debug)]
 pub enum DocumentFormat {
@@ -144,7 +141,6 @@ fn docx_to_pdf(mut reader: impl io::Read) -> anyhow::Result<Vec<u8>> {
     );
 
     // TODO: Move unoserver url to the config
-    // TODO: Use bytes() instead of text()
     let pdf_response = Client::new()
         .post("http://localhost:2003/")
         .body(request)
@@ -167,8 +163,6 @@ fn docx_to_pdf(mut reader: impl io::Read) -> anyhow::Result<Vec<u8>> {
         anyhow!("failed to find </base64> in unoserver response: '{pdf_response}'")
     })?;
 
-    let instant = Instant::now();
-
     // It seems to me that this code should not panic,
     // because the unoserver response will always only contain ascii characters?..
     let pdf_base64 = &pdf_response.as_bytes()[pdf_base64_start_idx..pdf_base64_end_idx];
@@ -180,8 +174,6 @@ fn docx_to_pdf(mut reader: impl io::Read) -> anyhow::Result<Vec<u8>> {
     DecoderReader::new(pdf_base64_reader, &general_purpose::STANDARD)
         .read_to_end(&mut pdf)
         .context("decoding base64 encoded pdf from unoserver")?;
-
-    log::debug!("Time spent decoding base64: {:?}", instant.elapsed());
 
     Ok(pdf)
 }
