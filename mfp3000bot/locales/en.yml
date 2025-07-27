@@ -1,0 +1,68 @@
+# Main messages
+unallowed_user: "👀 You don't have access to this Telegram bot. Contact the administrator to get access"
+hello: |
+  👋 Welcome to the printing and scanning bot!
+
+  To print a document, simply send a PDF or DOCX file to this chat.
+      
+  To scan a document, send the /scan command and follow the on-screen instructions.
+
+  All commands are available through the "Menu" button at the bottom of the screen.
+
+help: |
+  🖨️ This bot is designed for quick access to our home printer via Telegram.
+
+  To print a document, simply send a PDF or DOCX file to this chat.
+
+  To scan a document, send the /scan command and follow the on-screen instructions.
+
+# Bot states
+bot_busy: "🕓 The bot is busy scanning a document. Send a command after scanning is complete."
+
+# Printing
+print_command: "🖨️ To print a document, simply send a PDF or DOCX file to this chat!"
+no_printer_cfg: "🖨️ Printer is not specified in config. Change the configuration file and restart the bot!"
+unsupported_doc: "😓 Sorry, your document is not supported."
+print_success: "📄 Document \"%{doc_name}\" successfully sent to print!"
+print_failed: "⚠️ Error printing document \"%{doc_name}\"!"
+
+# Scanning - mode selection
+select_scan_mode: "Select the number of pages in the document"
+scan_single_page: "📄 Single page"
+scan_document: "📕 Multi-page document"
+
+# Scanning - actions
+select_scan_action: "Select action"
+scan_cancel: "⛔ Cancel scanning"
+scan_start: "🚀 Start"
+scan_preview: "👀 Preview"
+scan_add_page: "🚀 Add page"
+scan_preview_page: "👀 Preview page"
+scan_done: "📥 Finish"
+
+# Scanning - progress
+scan_prepair: "⚙️ Preparing for scanning..."
+scan_progress: "⏳ Scanning page..."
+stop_scanner: "⚙️ Stopping scanner..."
+scan_compress_jpeg: "⚙️ Preparing JPEG..."
+scan_preview_done: "👀 Page preview:"
+single_page_result: "📄 Scanned page:"
+scan_error: "⚠️ Scanning error"
+scan_prepare_pdf: "⚙️ Preparing PDF document..."
+multipage_result: "📕 Scanned document:"
+
+# Cancel scanning
+scan_cancel_confirm: "⚠️ Cancel scanning and delete document?"
+scan_cancelled: "👍 Scanning cancelled"
+scan_cancel_yes: "🗑️ Yes"
+scan_cancel_no: "↩️ No"
+
+# Document renaming
+rename_document: "🏷️ Enter document name:"
+rename_default: "📥 Leave default"
+invalid_doc_name: "🏷️ Enter document name:"
+default_single_page: "Page"
+default_doc: "Document"
+
+# Dynamic messages
+select_doc_action: "📄 Pages in document: %{count}. Select action" 
