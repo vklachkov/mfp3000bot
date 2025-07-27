@@ -1,14 +1,15 @@
 use crate::{bot::BotDialogue, bot_data::buttons_to_inline_keyboard};
+use std::borrow::Cow;
 use teloxide::prelude::*;
 
 #[inline(always)]
-pub async fn send_msg(bot: &Bot, chat_id: ChatId, text: &str) -> anyhow::Result<()> {
+pub async fn send_msg(bot: &Bot, chat_id: ChatId, text: Cow<'_, str>) -> anyhow::Result<()> {
     bot.send_message(chat_id, text).await?;
     Ok(())
 }
 
 #[inline(always)]
-pub async fn edit_msg(bot: &Bot, msg: &Message, text: &str) -> anyhow::Result<()> {
+pub async fn edit_msg(bot: &Bot, msg: &Message, text: Cow<'_, str>) -> anyhow::Result<()> {
     bot.edit_message_text(msg.chat.id, msg.id, text).await?;
     Ok(())
 }
@@ -17,7 +18,7 @@ pub async fn edit_msg(bot: &Bot, msg: &Message, text: &str) -> anyhow::Result<()
 pub async fn send_interative(
     bot: &Bot,
     dialogue: &BotDialogue,
-    text: &str,
+    text: Cow<'_, str>,
     buttons: &[(&str, (usize, &str))],
 ) -> anyhow::Result<Message> {
     let message = bot
@@ -32,7 +33,7 @@ pub async fn send_interative(
 pub async fn edit_interative(
     bot: &Bot,
     message: &Message,
-    text: &str,
+    text: Cow<'_, str>,
     buttons: &[(&str, (usize, &str))],
 ) -> anyhow::Result<Message> {
     let message = bot

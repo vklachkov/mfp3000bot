@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate rust_i18n;
+
 mod bot;
 mod bot_data;
 mod bot_utils;
@@ -8,7 +11,10 @@ mod scan;
 
 use argh::FromArgs;
 use config::Config;
+use rust_i18n::{set_locale, available_locales, i18n};
 use std::{path::PathBuf, process};
+
+i18n!();
 
 #[derive(FromArgs)]
 /// Telegram bot for printing and scanning
@@ -34,6 +40,8 @@ async fn main() {
     hello(&args);
 
     let config = read_config(&args);
+
+    setup_localization(&config);
 
     log::info!("Start telegram bot");
     bot::start(config).await;
@@ -83,4 +91,16 @@ fn read_config(args: &Args) -> Config {
             process::exit(1);
         }
     }
+}
+
+fn setup_localization(config: &Config) {
+    let locale = &config.telegram.language;
+    
+    let supported_locales = available_locales!();
+    if !supported_locales.contains(&locale.as_str()) {
+        log::error!("Unsupported language '{locale}'. Supported languages: {}", supported_locales.join(", "));
+        process::exit(1);
+    }
+    
+    set_locale(locale);
 }

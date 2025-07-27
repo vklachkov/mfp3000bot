@@ -188,7 +188,9 @@ async fn filter_users(globals: Arc<Globals>, bot: Bot, message: Message) -> bool
     let allow = globals.config.telegram.allowed_users.contains(username);
     if !allow {
         log::info!("Unallowed user {username} is trying to access bot");
-        _ = bot.send_message(message.chat.id, UNALLOWED_USER).await;
+        _ = bot
+            .send_message(message.chat.id, t!("unallowed_user"))
+            .await;
     }
 
     allow
@@ -196,28 +198,28 @@ async fn filter_users(globals: Arc<Globals>, bot: Bot, message: Message) -> bool
 
 /// Команда `/start`.
 async fn hello(bot: Bot, msg: Message) -> anyhow::Result<()> {
-    send_msg(&bot, msg.chat.id, HELLO).await
+    send_msg(&bot, msg.chat.id, t!("hello")).await
 }
 
 /// Команда `/help`.
 async fn help(bot: Bot, msg: Message) -> anyhow::Result<()> {
-    send_msg(&bot, msg.chat.id, HELP).await
+    send_msg(&bot, msg.chat.id, t!("help")).await
 }
 
 /// Любая команда, когда бот не находится в состоянии Empty.
 async fn bot_busy(bot: Bot, msg: Message) -> anyhow::Result<()> {
-    send_msg(&bot, msg.chat.id, BOT_BUSY).await
+    send_msg(&bot, msg.chat.id, t!("bot_busy")).await
 }
 
 /// Команда `/print`.
 async fn print_document_help(bot: Bot, msg: Message) -> anyhow::Result<()> {
-    send_msg(&bot, msg.chat.id, PRINT_COMMAND_TEXT).await
+    send_msg(&bot, msg.chat.id, t!("print_command")).await
 }
 
 /// Отправка документа в чат.
 async fn print_document(globals: Arc<Globals>, bot: Bot, msg: Message) -> anyhow::Result<()> {
     let Some(printer) = globals.config.devices.printer.as_deref() else {
-        return send_msg(&bot, msg.chat.id, NO_PRINTER_IN_CFG).await;
+        return send_msg(&bot, msg.chat.id, t!("no_printer_cfg")).await;
     };
 
     let document = msg
@@ -225,19 +227,19 @@ async fn print_document(globals: Arc<Globals>, bot: Bot, msg: Message) -> anyhow
         .expect("Message must have document attachment");
 
     let Some((name, format, url)) = get_document(&globals, &bot, document).await? else {
-        return send_msg(&bot, msg.chat.id, UNSUPPORTED_DOCUMENT).await;
+        return send_msg(&bot, msg.chat.id, t!("unsupported_doc")).await;
     };
 
     match print::print_remote_file(printer, &name, format, &url, &globals.config.print) {
         Ok(()) => {
             log::debug!("Document '{name}' successfully printed");
-            send_msg(&bot, msg.chat.id, &SUCCESSFUL_PRINT(&name)).await?;
+            send_msg(&bot, msg.chat.id, t!("print_success", doc_name = &name)).await?;
         }
 
         // TODO: Отправлять в сообщение человекочитаемую ошибку печати.
         Err(err) => {
             log::error!("Failed to print document '{name}': {err:#}");
-            send_msg(&bot, msg.chat.id, &FAILED_TO_PRINT(&name)).await?;
+            send_msg(&bot, msg.chat.id, t!("print_failed", doc_name = &name)).await?;
         }
     }
 
@@ -253,7 +255,7 @@ async fn get_document(
     bot: &Bot,
     doc: &Document,
 ) -> anyhow::Result<Option<(String, DocumentFormat, Url)>> {
-    let file = bot.get_file(&doc.file.id).await?;
+    let file = bot.get_file(doc.file.id.clone()).await?;
 
     let Some(file_name) = doc.file_name.clone() else {
         return Ok(None);
@@ -277,7 +279,7 @@ async fn get_document(
 /// Команда `/scan`.
 async fn start_scan(bot: Bot, dialogue: BotDialogue) -> anyhow::Result<()> {
     let dialogue_message =
-        send_interative(&bot, &dialogue, SELECT_SCAN_MODE, &*SCAN_MODE_BUTTONS).await?;
+        send_interative(&bot, &dialogue, t!("select_scan_mode"), &*SCAN_MODE_BUTTONS).await?;
 
     dialogue
         .update(BotState::SelectScanMode { dialogue_message })
@@ -312,9 +314,21 @@ async fn show_scan_action_selector(
     mode: ScanMode,
 ) -> anyhow::Result<()> {
     let dialogue_message = if let Some(message) = dialogue_message {
-        edit_interative(&bot, &message, SELECT_SCAN_ACTION, &*SCAN_ACTIONS_BUTTONS).await?
+        edit_interative(
+            &bot,
+            &message,
+            t!("select_scan_action"),
+            &*SCAN_ACTIONS_BUTTONS,
+        )
+        .await?
     } else {
-        send_interative(&bot, &dialogue, SELECT_SCAN_ACTION, &*SCAN_ACTIONS_BUTTONS).await?
+        send_interative(
+            &bot,
+            &dialogue,
+            t!("select_scan_action"),
+            &*SCAN_ACTIONS_BUTTONS,
+        )
+        .await?
     };
 
     dialogue
@@ -350,7 +364,7 @@ async fn first_scan_action_selected(
             scan_first_page_preview(globals, bot, dialogue, dialogue_message, mode).await?;
         }
         ScanAction::Cancel => {
-            edit_msg(&bot, &dialogue_message, SCAN_CANCELLED).await?;
+            edit_msg(&bot, &dialogue_message, t!("scan_cancelled")).await?;
             dialogue.update(BotState::Empty).await?;
         }
         _ => unreachable!(),
@@ -411,7 +425,7 @@ async fn scan_first_page_task(
         ScanResult::Error(err) => {
             // TODO: Отправка человекочитаемой ошибки в сообщении.
             log::error!("Ошибка сканирования: {err:#}");
-            edit_msg(&bot, &dialogue_message, SCAN_ERROR).await?;
+            edit_msg(&bot, &dialogue_message, t!("scan_error")).await?;
             show_scan_action_selector(bot, dialogue, None, mode).await?;
         }
     }
@@ -470,7 +484,7 @@ where
     let scan_result = scan_page(globals, &bot, &dialogue_message, dpi, cancel).await?;
     match scan_result {
         ScanResult::Done(jpeg) => {
-            edit_msg(&bot, &dialogue_message, SCAN_PREVIEW_DONE).await?;
+            edit_msg(&bot, &dialogue_message, t!("scan_preview_done")).await?;
 
             bot.send_photo(dialogue.chat_id(), InputFile::memory(jpeg.bytes))
                 .await?;
@@ -483,7 +497,7 @@ where
         ScanResult::Error(err) => {
             // TODO: Отправка человекочитаемой ошибки в сообщении.
             log::error!("Ошибка сканирования: {err:#}");
-            edit_msg(&bot, &dialogue_message, SCAN_ERROR).await?;
+            edit_msg(&bot, &dialogue_message, t!("scan_error")).await?;
 
             update_message(bot, dialogue, None).await?;
         }
@@ -509,13 +523,13 @@ async fn scan_page(
                 edit_interative(bot, message, SCAN_PREPAIR, &*SCAN_CANCEL).await?;
             }
             ScanState::Progress => {
-                edit_interative(bot, message, SCAN_PROGRESS, &*SCAN_CANCEL).await?;
+                edit_interative(bot, message, t!("scan_progress"), &*SCAN_CANCEL).await?;
             }
             ScanState::Stop => {
-                edit_msg(bot, message, STOP_SCANNER).await?;
+                edit_msg(bot, message, t!("stop_scanner")).await?;
             }
             ScanState::CompressToJpeg => {
-                edit_msg(bot, message, SCAN_COMPRESS_JPEG).await?;
+                edit_msg(bot, message, t!("scan_compress_jpeg")).await?;
             }
             ScanState::Done(jpeg) => {
                 return Ok(ScanResult::Done(jpeg));
@@ -558,7 +572,7 @@ async fn show_rename_page_dialog(
     edit_interative(
         &bot,
         &dialogue_message,
-        RENAME_DOCUMENT,
+        t!("rename_document"),
         &*RENAME_DOCUMENT_BUTTONS,
     )
     .await?;
@@ -580,12 +594,12 @@ async fn receive_page_name(
     (dialogue_message, page): (Message, Page), // From `State::ReceiveScannedPageName`.
 ) -> anyhow::Result<()> {
     let Some(name) = msg.text() else {
-        return send_msg(&bot, msg.chat.id, INVALID_DOCUMENT_NAME).await;
+        return send_msg(&bot, msg.chat.id, t!("invalid_doc_name")).await;
     };
 
-    edit_msg(&bot, &dialogue_message, RENAME_DOCUMENT).await?;
+    edit_msg(&bot, &dialogue_message, t!("rename_document")).await?;
 
-    send_page(&bot, dialogue.chat_id(), None, name, page).await?;
+    send_page(&bot, dialogue.chat_id(), None, Cow::from(name), page).await?;
 
     dialogue.update(BotState::Empty).await?;
 
@@ -601,7 +615,7 @@ async fn receive_page_rename_cancel(
         &bot,
         dialogue.chat_id(),
         Some(dialogue_message),
-        DEFAULT_SINGLE_PAGE_NAME,
+        t!("default_single_page"),
         page,
     )
     .await?;
@@ -615,13 +629,13 @@ async fn send_page(
     bot: &Bot,
     chat_id: ChatId,
     dialogue_message: Option<Message>,
-    name: &str,
+    name: Cow<'_, str>,
     page: Page,
 ) -> anyhow::Result<()> {
     if let Some(dialogue_message) = dialogue_message {
-        edit_msg(bot, &dialogue_message, SINGLE_PAGE_SCAN_RESULT).await?;
+        edit_msg(bot, &dialogue_message, t!("single_page_result")).await?;
     } else {
-        send_msg(bot, chat_id, SINGLE_PAGE_SCAN_RESULT).await?;
+        send_msg(bot, chat_id, t!("single_page_result")).await?;
     }
 
     let document = InputFile::memory(page.bytes.to_owned()).file_name(format!("{name}.jpg"));
@@ -640,7 +654,7 @@ async fn show_document_action_selector(
         edit_interative(
             &bot,
             &message,
-            &SELECT_DOCUMENT_ACTION(pages.len()),
+            t!("select_doc_action", count = pages.len()),
             &*DOCUMENT_ACTION_BUTTONS,
         )
         .await?
@@ -648,7 +662,7 @@ async fn show_document_action_selector(
         send_interative(
             &bot,
             &dialogue,
-            SELECT_SCAN_ACTION,
+            t!("select_scan_action"),
             &*DOCUMENT_ACTION_BUTTONS,
         )
         .await?
@@ -745,7 +759,7 @@ async fn scan_document_page_task(
         ScanResult::Error(err) => {
             // TODO: Отправка человекочитаемой ошибки в сообщении.
             log::error!("Ошибка сканирования: {err:#}");
-            edit_msg(&bot, &dialogue_message, SCAN_ERROR).await?;
+            edit_msg(&bot, &dialogue_message, t!("scan_error")).await?;
 
             show_document_action_selector(bot, dialogue, None, pages).await?;
         }
@@ -762,7 +776,7 @@ async fn ask_scan_cancel_confirmation(
     edit_interative(
         &bot,
         &dialogue_message,
-        SCAN_CANCEL_CONFIRMATION,
+        t!("scan_cancel_confirm"),
         &*SCAN_CANCEL_CONFIRM_BUTTONS,
     )
     .await?;
@@ -793,7 +807,7 @@ async fn receive_scan_cancel_confirmation(
 
     match answer {
         ScanCancel::Forget => {
-            edit_msg(&bot, &dialogue_message, SCAN_CANCELLED).await?;
+            edit_msg(&bot, &dialogue_message, t!("scan_cancelled")).await?;
             dialogue.update(BotState::Empty).await?;
         }
         ScanCancel::Cancel => {
@@ -847,7 +861,7 @@ async fn show_rename_document_dialog(
     edit_interative(
         &bot,
         &dialogue_message,
-        RENAME_DOCUMENT,
+        t!("rename_document"),
         &*RENAME_DOCUMENT_BUTTONS,
     )
     .await?;
@@ -871,7 +885,7 @@ async fn receive_document_rename_cancel(
         &bot,
         &dialogue,
         Some(dialogue_message),
-        DEFAULT_DOC_NAME,
+        t!("default_doc"),
         pages,
     )
     .await?;
@@ -888,12 +902,12 @@ async fn receive_document_name(
     (dialogue_message, pages): (Message, Pages), // From `State::ReceiveScannedDocumentName`.
 ) -> anyhow::Result<()> {
     let Some(name) = msg.text() else {
-        return send_msg(&bot, msg.chat.id, INVALID_DOCUMENT_NAME).await;
+        return send_msg(&bot, msg.chat.id, t!("invalid_doc_name")).await;
     };
 
-    edit_msg(&bot, &dialogue_message, RENAME_DOCUMENT).await?;
+    edit_msg(&bot, &dialogue_message, t!("rename_document")).await?;
 
-    send_pdf(&bot, &dialogue, None, name, pages).await?;
+    send_pdf(&globals, &bot, &dialogue, None, Cow::from(name), pages).await?;
 
     dialogue.update(BotState::Empty).await?;
 
@@ -904,14 +918,18 @@ async fn send_pdf(
     bot: &Bot,
     dialogue: &BotDialogue,
     dialogue_message: Option<Message>,
-    name: &str,
+    name: Cow<'_, str>,
     pages: Pages,
 ) -> anyhow::Result<()> {
     let dialogue_message = if let Some(dialogue_message) = dialogue_message {
-        bot.edit_message_text(dialogue.chat_id(), dialogue_message.id, SCAN_PREPARE_PDF)
+        bot.edit_message_text(
+            dialogue.chat_id(),
+            dialogue_message.id,
+            t!("scan_prepare_pdf"),
+        )
             .await?
     } else {
-        bot.send_message(dialogue.chat_id(), SCAN_PREPARE_PDF)
+        bot.send_message(dialogue.chat_id(), t!("scan_prepare_pdf"))
             .await?
     };
 
@@ -919,7 +937,7 @@ async fn send_pdf(
         .await
         .unwrap();
 
-    edit_msg(bot, &dialogue_message, MULTIPAGE_SCAN_RESULT).await?;
+    edit_msg(bot, &dialogue_message, t!("multipage_result")).await?;
 
     bot.send_document(
         dialogue.chat_id(),
