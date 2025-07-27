@@ -7,7 +7,7 @@ use crate::{
     scan::{self, Jpeg, ScanState},
 };
 use reqwest::Url;
-use std::{future::Future, io, str::FromStr, sync::Arc};
+use std::{borrow::Cow, future::Future, io, str::FromStr, sync::Arc};
 use teloxide::{
     dispatching::{
         dialogue::{self, InMemStorage},

@@ -92,25 +92,16 @@ fn scan_page(
 
     send_state!(ScanState::Prepair);
 
-    let device_name = config
+    let scanner_name = config
         .devices
         .scanner
         .clone()
         .ok_or_else(|| anyhow!("scanner is not specified in the config"))?;
 
-    log::debug!("Use scanner '{device_name}'");
-
-    // TODO: Don't use get_devices, try to open by name from config.
     check_cancellation!(cancel);
-    let device = BACKEND
-        .find_device_by_name(&device_name)
-        .context("reading devices")?
-        .ok_or_else(|| anyhow!("device '{device_name}' not found"))?;
+    let mut scanner = Scanner::new(&scanner_name).context("opening device")?;
 
-    check_cancellation!(cancel);
-    let mut scanner = Scanner::new(device).context("opening device")?;
-
-    setup_scanner(&mut scanner, &config, dpi);
+    setup_scanner(&mut scanner, &scanner_name, &config, dpi);
 
     check_cancellation!(cancel);
     let mut reader = scanner.start().context("starting scan")?;
@@ -170,15 +161,13 @@ fn scan_page(
 }
 
 #[rustfmt::skip]
-fn setup_scanner(scanner: &mut Scanner<'_>, config: &Config, dpi: u16) {
+fn setup_scanner(scanner: &mut Scanner, name: &str, config: &Config, dpi: u16) {
     log::debug!("Start device setup");
-
-    let device_name = scanner.get_device().name.to_string();
 
     let options = scanner.options();
     log::debug!("Device options: {options:#?}");
 
-    let values = get_options_values(&device_name, config);
+    let values = get_options_values(name, config);
     log::debug!("Options values from config: {values:#?}");
 
     for (i, option) in options.into_iter().enumerate() {

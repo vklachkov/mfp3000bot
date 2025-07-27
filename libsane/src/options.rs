@@ -11,20 +11,20 @@ use std::{
 
 #[repr(transparent)]
 #[derive(Debug, Clone)]
-pub struct ScannerOptions<'b, 'd>(Vec<ScannerOption<'b, 'd>>);
+pub struct ScannerOptions<'s>(Vec<ScannerOption<'s>>);
 
 #[derive(Clone)]
-pub struct ScannerOption<'b, 'd> {
-    scanner: &'d Scanner<'b>,
+pub struct ScannerOption<'s> {
+    scanner: &'s Scanner,
 
     pub number: i32,
-    pub name: Option<&'d BStr>,
-    pub title: &'d BStr,
-    pub description: &'d BStr,
+    pub name: Option<&'s BStr>,
+    pub title: &'s BStr,
+    pub description: &'s BStr,
     pub ty: Type,
     pub unit: Unit,
     pub capatibilities: Capatibilities,
-    pub constraint: Constraint<'d>,
+    pub constraint: Constraint<'s>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -84,8 +84,8 @@ pub enum Value<'a> {
     String(&'a BStr),
 }
 
-impl<'b, 'd> ScannerOptions<'b, 'd> {
-    pub(crate) fn new(scanner: &'d Scanner<'b>) -> Self {
+impl<'s> ScannerOptions<'s> {
+    pub(crate) fn new(scanner: &'s Scanner) -> Self {
         Self(
             (0i32..i32::MAX)
                 .map_while(|i| Self::get_option(scanner, i))
@@ -93,7 +93,7 @@ impl<'b, 'd> ScannerOptions<'b, 'd> {
         )
     }
 
-    fn get_option(scanner: &'d Scanner<'b>, i: i32) -> Option<ScannerOption<'b, 'd>> {
+    fn get_option(scanner: &'s Scanner, i: i32) -> Option<ScannerOption<'s>> {
         let handle = unsafe { scanner.get_device_handle() };
 
         log::trace!("Call sane_get_option_descriptor({handle:p}, {i})");
@@ -103,25 +103,25 @@ impl<'b, 'd> ScannerOptions<'b, 'd> {
     }
 }
 
-impl<'b, 'd> ops::Deref for ScannerOptions<'b, 'd> {
-    type Target = [ScannerOption<'b, 'd>];
+impl<'s> ops::Deref for ScannerOptions<'s> {
+    type Target = [ScannerOption<'s>];
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<'b, 'd> IntoIterator for ScannerOptions<'b, 'd> {
-    type Item = <Vec<ScannerOption<'b, 'd>> as IntoIterator>::Item;
-    type IntoIter = <Vec<ScannerOption<'b, 'd>> as IntoIterator>::IntoIter;
+impl<'s> IntoIterator for ScannerOptions<'s> {
+    type Item = <Vec<ScannerOption<'s>> as IntoIterator>::Item;
+    type IntoIter = <Vec<ScannerOption<'s>> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl<'b, 'd> ScannerOption<'b, 'd> {
-    pub fn new(scanner: &'d Scanner<'b>, i: i32, desc: &'d SANE_Option_Descriptor) -> Self {
+impl<'s> ScannerOption<'s> {
+    pub fn new(scanner: &'s Scanner, i: i32, desc: &'s SANE_Option_Descriptor) -> Self {
         Self {
             scanner,
             number: i,
@@ -130,7 +130,7 @@ impl<'b, 'd> ScannerOption<'b, 'd> {
             description: unsafe { cstr2bstr(desc.desc) }.expect("desc should not be null"),
             ty: desc.type_.into(),
             unit: desc.unit.into(),
-            capatibilities: Capatibilities::from_bits_retain(unsafe { mem::transmute(desc.cap) }),
+            capatibilities: Capatibilities::from_bits_retain(unsafe { mem::transmute::<i32, u32>(desc.cap) }),
             constraint: Constraint::new(desc.constraint_type, desc.constraint),
         }
     }
@@ -196,7 +196,7 @@ impl<'b, 'd> ScannerOption<'b, 'd> {
     }
 }
 
-impl Debug for ScannerOption<'_, '_> {
+impl Debug for ScannerOption<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Option")
             .field("number", &self.number)
@@ -240,7 +240,7 @@ impl From<SANE_Unit> for Unit {
     }
 }
 
-impl<'a> Constraint<'a> {
+impl Constraint<'_> {
     fn new(ty: SANE_Constraint_Type, constraint: SANE_Option_Descriptor__bindgen_ty_1) -> Self {
         match ty {
             SANE_Constraint_Type_SANE_CONSTRAINT_NONE => Self::None,
