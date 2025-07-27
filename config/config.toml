@@ -1,15 +1,33 @@
 [telegram]
-token = "XXXXX"
-allowed_users = []
+token = "Token from @botfather"
+allowed_users = ["Your nickname here"]
+language = "en/ru"
 
 [devices]
-# printer = ""
-scanner = "v4l:/dev/video0"
+printer = "Name of printer from CUPS web interface"
+scanner = "Path to scanner from scanimage -L"
 
-[scanner_common]
+[print]
+# All supported paper sizes described at libcups/src/options.rs:152
+paper_size = "F8X10/A3/A4/A5/A6/Letter/Legal..."
+orientation = "Portrait/Landscape"
+sides = "OneSide/TwoSidedPortrait/TwoSidedLandscape"
+color_mode = "Auto/Color/Monochrome"
+quality = "Draft/Normal/High"
+
+[scan]
 preview_dpi = 100
 page_dpi = 300
 page_quality = 75
 
-[scanner."v4l:/dev/video0"]
-mode = "color"
+[scan.common_options]
+# Custom settings specifically for your printer.
+# Parameters and keys must always be enclosed in quotes, even if they are numbers.
+#
+# To get a list of settings, you can either you can use 2 variants:
+# 1. `scanimage -d "device" -A` and then take the parameter names and valid values from there (without the `--` prefix)
+# 2. Run `mfp3000bot` with the `--verbose` flag and start scanning.
+
+# Options for specific scanner. Just for tests
+# [scanner."v4l:/dev/video0"]
+# mode = "color"
