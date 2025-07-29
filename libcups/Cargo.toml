@@ -8,5 +8,5 @@ path = "src/lib.rs"
 
 [dependencies]
 libcups-sys = { version = "2.4.0", path = "../libcups-sys" }
-log = "0.4.20"
-serde = { version = "1.0.197", features = ["derive"] }
+log = "0.4.27"
+serde = { version = "1.0.219", features = ["derive"] }

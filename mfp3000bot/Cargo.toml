@@ -23,4 +23,4 @@ simple_logger = "5.0.0"
 strum = { version = "0.27.2", features = ["derive"] }
 teloxide = { version = "0.17.0", features = ["macros"] }
 tokio = { version = "1.47.0", features = ["full"] }
-toml = "0.9.2"
+toml = "0.9.3"
