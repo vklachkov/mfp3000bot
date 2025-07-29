@@ -24,6 +24,7 @@ fn bindgen_cups() {
 
     bindgen::builder()
         .header("ffi/wrapper.h")
+        .generate_cstr(true)
         .generate()
         .expect("Failed to generate bindings")
         .write_to_file(&bindings_path)
