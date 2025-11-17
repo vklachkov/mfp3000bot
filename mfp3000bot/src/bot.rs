@@ -1,13 +1,13 @@
-#[cfg(feature = "scan")]
-use crate::{
-    scan_bot_buttons::*,
-    pdf_builder::PdfBuilder,
-    scan::{self, Jpeg, ScanState},
-};
 use crate::{
     bot_utils::*,
     config::Config,
     print::{self, DocumentFormat},
+};
+#[cfg(feature = "scan")]
+use crate::{
+    pdf_builder::PdfBuilder,
+    scan::{self, Jpeg, ScanState},
+    scan_bot_buttons::*,
 };
 use reqwest::Url;
 use std::sync::Arc;
@@ -143,6 +143,8 @@ fn schema() -> UpdateHandler<anyhow::Error> {
         .endpoint(bot_busy);
 
     let message_handler = Update::filter_message()
+        // К сожалению, Telegram не даёт скрыть бота из поиска и приходится делать фильтр.
+        .filter_async(filter_group)
         .filter_async(filter_users)
         .branch(command_handler)
         .branch(dptree::filter(|msg: Message| msg.document().is_some()).endpoint(print_document));
@@ -211,10 +213,53 @@ fn schema() -> UpdateHandler<anyhow::Error> {
         .branch(callback_query_handler)
 }
 
+/// Фильтр по разрешённой группе.
+async fn filter_group(globals: Arc<Globals>, bot: Bot, message: Message) -> bool {
+    if message.chat.is_private() {
+        // Будет обработано фильтром `filter_users`.
+        return true;
+    }
+
+    if message.chat.is_channel() {
+        // Бот не поддерживает каналы.
+        return false;
+    }
+
+    let Some(allowed_group) = globals.config.telegram.allowed_group else {
+        // Пропускаем сообщения из групп, если в конфиге allowed_chat не задан.
+        return false;
+    };
+
+    if message.chat.id.0 != allowed_group.chat_id {
+        // Пропускаем сообщения из групп, если в конфиге задан другой id.
+        return false;
+    }
+
+    let Some(message_thread_id) = message.thread_id else {
+        return true;
+    };
+
+    let Some(allowed_thread_id) = allowed_group.thread_id else {
+        // Если тред не указан, значит в суппергруппе можно обращться с ботом из любого топика.
+        // Осторожно! Каждый отправленный файл в чат будет отправляться на печать.
+        return true;
+    };
+
+    if message_thread_id.0 .0 == allowed_thread_id {
+        return true;
+    } else {
+        _ = bot
+            .send_message(message.chat.id, t!("unallowed_thread"))
+            .await;
+
+        return false;
+    }
+}
+
 /// Фильтр по белому списку пользователей.
-///
-/// К сожалению, Telegram не даёт скрыть бота из поиска и приходится делать фильтр.
 async fn filter_users(globals: Arc<Globals>, bot: Bot, message: Message) -> bool {
+    let allowed_users = &globals.config.telegram.allowed_users;
+
     let Some(username) = message
         .from
         .as_ref()
@@ -223,7 +268,11 @@ async fn filter_users(globals: Arc<Globals>, bot: Bot, message: Message) -> bool
         return false;
     };
 
-    let allow = globals.config.telegram.allowed_users.contains(username);
+    if allowed_users.is_empty() && (message.chat.is_group() || message.chat.is_supergroup()) {
+        return true;
+    }
+
+    let allow = allowed_users.contains(username);
     if !allow {
         log::info!("Unallowed user {username} is trying to access bot");
         _ = bot

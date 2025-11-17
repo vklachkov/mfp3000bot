@@ -1,5 +1,6 @@
 # Main messages
 unallowed_user: "👀 You don't have access to this Telegram bot. Contact the administrator to get access"
+unallowed_thread: "👀 The administrator has forbidden using the bot in this thread"
 hello: |
   👋 Welcome to the printing and scanning bot!
 

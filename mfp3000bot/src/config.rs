@@ -25,8 +25,59 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Telegram {
     pub token: String,
+    #[serde(default)]
+    pub allowed_group: Option<TelegramGroup>,
     pub allowed_users: Vec<String>,
     pub language: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TelegramGroup {
+    pub chat_id: i64,
+    pub thread_id: Option<i32>,
+}
+
+impl<'de> Deserialize<'de> for TelegramGroup {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        let s = <&'de str>::deserialize(deserializer)?;
+        if !s.is_ascii() {
+            return Err(D::Error::invalid_value(
+                serde::de::Unexpected::Str(s),
+                &"an ASCII string",
+            ));
+        }
+
+        let invalid_format = |_| {
+            D::Error::invalid_value(
+                serde::de::Unexpected::Str(s),
+                &"string in format `chat_id` or `chat_id/thread_id`",
+            )
+        };
+
+        let Some(separator_idx) = s.find('/') else {
+            let chat_id = i64::from_str_radix(s, 10).map_err(invalid_format)?;
+            return Ok(Self {
+                chat_id,
+                thread_id: None,
+            });
+        };
+
+        let raw_chat_id = &s[..separator_idx];
+        let chat_id = i64::from_str_radix(raw_chat_id, 10).map_err(invalid_format)?;
+
+        let raw_thread_id = &s[separator_idx + 1..];
+        let thread_id = i32::from_str_radix(raw_thread_id, 10).map_err(invalid_format)?;
+
+        Ok(TelegramGroup {
+            chat_id,
+            thread_id: Some(thread_id),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,7 +105,7 @@ pub struct Scan {
 
     pub page_quality: u8,
 
-    #[serde(default = "Default::default")]
+    #[serde(default)]
     pub common_options: HashMap<BString, BString>,
 }
 
