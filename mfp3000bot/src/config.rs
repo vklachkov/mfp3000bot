@@ -1,7 +1,10 @@
 use anyhow::Context;
+#[cfg(feature = "scan")]
 use bstr::BString;
 use serde::Deserialize;
-use std::{collections::HashMap, fs, path::Path};
+#[cfg(feature = "scan")]
+use std::collections::HashMap;
+use std::{fs, path::Path};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -10,8 +13,11 @@ pub struct Config {
     pub devices: Devices,
 
     pub print: Print,
+
+    #[cfg(feature = "scan")]
     pub scan: Scan,
 
+    #[cfg(feature = "scan")]
     #[serde(default = "Default::default")]
     pub scanner: HashMap<String, HashMap<BString, BString>>,
 }
@@ -26,6 +32,7 @@ pub struct Telegram {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Devices {
     pub printer: Option<String>,
+    #[cfg(feature = "scan")]
     pub scanner: Option<String>,
 }
 
@@ -38,6 +45,7 @@ pub struct Print {
     pub quality: Option<libcups::options::PrintQuality>,
 }
 
+#[cfg(feature = "scan")]
 #[derive(Debug, Clone, Deserialize)]
 pub struct Scan {
     pub preview_dpi: u16,

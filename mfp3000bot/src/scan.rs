@@ -1,15 +1,26 @@
 use crate::config::Config;
-use anyhow::{anyhow, bail, Context};
-use bstr::{BStr, BString};
-use lazy_static::lazy_static;
-use libsane::{Backend, FrameFormat, OptionValue, Parameters, Scanner, ScannerOption};
-use std::{collections::HashMap, io::Read, thread};
+#[cfg(not(feature = "scan"))]
+use crate::config::{Devices, Scan};
+use anyhow::anyhow;
 use tokio::sync::{mpsc, oneshot};
 
+#[cfg(feature = "scan")]
+use anyhow::{bail, Context};
+#[cfg(feature = "scan")]
+use bstr::{BStr, BString};
+#[cfg(feature = "scan")]
+use lazy_static::lazy_static;
+#[cfg(feature = "scan")]
+use libsane::{Backend, FrameFormat, OptionValue, Parameters, Scanner, ScannerOption};
+#[cfg(feature = "scan")]
+use std::{collections::HashMap, io::Read, thread};
+
+#[cfg(feature = "scan")]
 lazy_static! {
     static ref BACKEND: Backend = Backend::new().expect("SANE should be initialize successfully");
 }
 
+#[cfg_attr(not(feature = "scan"), allow(dead_code))]
 pub enum ScanState {
     Prepair,
     Progress,
@@ -28,12 +39,14 @@ pub struct Jpeg {
     pub height: usize,
 }
 
+#[cfg_attr(not(feature = "scan"), allow(dead_code))]
 #[derive(Clone, Copy)]
 pub enum JpegFormat {
     Rgb,
     Gray,
 }
 
+#[cfg(feature = "scan")]
 pub fn start(
     config: Config,
     dpi: u16,
@@ -60,6 +73,44 @@ pub fn start(
     state_rx
 }
 
+#[cfg(not(feature = "scan"))]
+pub fn start(
+    config: Config,
+    _dpi: u16,
+    _cancel: oneshot::Receiver<()>,
+) -> mpsc::Receiver<ScanState> {
+    let Config {
+        devices: Devices {
+            scanner: device_scanner,
+            ..
+        },
+        scanner: scanner_overrides,
+        scan: Scan {
+            page_quality,
+            common_options,
+            ..
+        },
+        ..
+    } = config;
+    let _ = (
+        device_scanner,
+        scanner_overrides,
+        page_quality,
+        common_options,
+    );
+
+    let (state_tx, state_rx) = mpsc::channel(1);
+
+    log::warn!("Scan feature was disabled at build time");
+
+    let _ = state_tx.blocking_send(ScanState::Error(anyhow!(
+        "scan feature is disabled at build time"
+    )));
+
+    state_rx
+}
+
+#[cfg(feature = "scan")]
 fn scan_page(
     config: Config,
     dpi: u16,
@@ -160,6 +211,7 @@ fn scan_page(
     Ok(true)
 }
 
+#[cfg(feature = "scan")]
 #[rustfmt::skip]
 fn setup_scanner(scanner: &mut Scanner, name: &str, config: &Config, dpi: u16) {
     log::debug!("Start device setup");
@@ -187,6 +239,7 @@ fn setup_scanner(scanner: &mut Scanner, name: &str, config: &Config, dpi: u16) {
     }
 }
 
+#[cfg(feature = "scan")]
 fn get_options_values<'c>(
     device_name: &str,
     config: &'c Config,
@@ -206,6 +259,7 @@ fn get_options_values<'c>(
     values
 }
 
+#[cfg(feature = "scan")]
 fn set_option_value_or_use_default(option: &ScannerOption, value: &OptionValue) {
     let option_name = option.name.unwrap_or_else(|| BStr::new(b"noname"));
 
@@ -219,6 +273,7 @@ fn set_option_value_or_use_default(option: &ScannerOption, value: &OptionValue) 
     set_option_default_value(option);
 }
 
+#[cfg(feature = "scan")]
 fn set_option_default_value(option: &ScannerOption) {
     let option_name = option.name.unwrap_or_else(|| BStr::new(b"noname"));
 
@@ -234,6 +289,7 @@ fn set_option_default_value(option: &ScannerOption) {
     }
 }
 
+#[cfg(feature = "scan")]
 fn raw_image(parameters: Parameters, pixels: Vec<u8>) -> anyhow::Result<libjpeg::RawImage> {
     let width = parameters.pixels_per_line;
     let height = parameters.lines;
@@ -252,6 +308,7 @@ fn raw_image(parameters: Parameters, pixels: Vec<u8>) -> anyhow::Result<libjpeg:
     })
 }
 
+#[cfg(feature = "scan")]
 fn encode_jpeg(image: libjpeg::RawImage, output_quality: u8) -> Jpeg {
     let bytes = libjpeg::compress_to_jpeg(&image, output_quality);
 

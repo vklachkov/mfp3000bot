@@ -6,7 +6,11 @@ use crate::{
 use bstr::BStr;
 use libsane_sys::*;
 use std::{
-    ffi::{c_void, CStr, CString}, io, marker::PhantomData, ops::RangeInclusive, ptr::null_mut
+    ffi::{c_void, CStr, CString},
+    io,
+    marker::PhantomData,
+    ops::RangeInclusive,
+    ptr::null_mut,
 };
 
 #[derive(Debug)]
@@ -19,7 +23,11 @@ impl Scanner {
         let name = CString::new(name.as_ref()).map_err(|_| SaneError::Inval)?;
         let mut handle = null_mut();
 
-        log::trace!("Call sane_open('{}', {:p})", name.to_string_lossy(), &mut handle);
+        log::trace!(
+            "Call sane_open('{}', {:p})",
+            name.to_string_lossy(),
+            &mut handle
+        );
         sane_try!(sane_open(name.as_ptr(), &mut handle));
 
         Ok(Self { handle })

@@ -12,6 +12,9 @@ members = [
 
     "mfp3000bot",
 ]
+default-members = [
+    "mfp3000bot",
+]
 
 [profile.release]
 opt-level = 3

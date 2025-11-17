@@ -130,7 +130,9 @@ impl<'s> ScannerOption<'s> {
             description: unsafe { cstr2bstr(desc.desc) }.expect("desc should not be null"),
             ty: desc.type_.into(),
             unit: desc.unit.into(),
-            capatibilities: Capatibilities::from_bits_retain(unsafe { mem::transmute::<i32, u32>(desc.cap) }),
+            capatibilities: Capatibilities::from_bits_retain(unsafe {
+                mem::transmute::<i32, u32>(desc.cap)
+            }),
             constraint: Constraint::new(desc.constraint_type, desc.constraint),
         }
     }

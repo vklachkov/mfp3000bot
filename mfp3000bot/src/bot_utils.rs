@@ -1,6 +1,8 @@
-use crate::{bot::BotDialogue, bot_data::buttons_to_inline_keyboard};
+#![allow(unused)]
+
+use crate::bot::BotDialogue;
 use std::borrow::Cow;
-use teloxide::prelude::*;
+use teloxide::{prelude::*, types::{InlineKeyboardButton, InlineKeyboardMarkup}};
 
 #[inline(always)]
 pub async fn send_msg(bot: &Bot, chat_id: ChatId, text: Cow<'_, str>) -> anyhow::Result<()> {
@@ -42,4 +44,16 @@ pub async fn edit_interative(
         .await?;
 
     Ok(message)
+}
+
+pub fn buttons_to_inline_keyboard(buttons: &[(&str, (usize, &str))]) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::new((0..buttons.len()).map(|idx| {
+        buttons
+            .iter()
+            .filter(move |(_, (row, _))| *row == idx)
+            .map(|(id, (_, text_key))| {
+                let text = t!(*text_key);
+                InlineKeyboardButton::callback(text, *id)
+            })
+    }))
 }

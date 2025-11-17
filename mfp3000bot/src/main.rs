@@ -2,16 +2,19 @@
 extern crate rust_i18n;
 
 mod bot;
-mod bot_data;
 mod bot_utils;
 mod config;
+#[cfg(feature = "scan")]
 mod pdf_builder;
 mod print;
+#[cfg(feature = "scan")]
 mod scan;
+#[cfg(feature = "scan")]
+mod scan_bot_buttons;
 
 use argh::FromArgs;
 use config::Config;
-use rust_i18n::{set_locale, available_locales, i18n};
+use rust_i18n::{available_locales, i18n, set_locale};
 use std::{path::PathBuf, process};
 
 i18n!();
@@ -95,12 +98,15 @@ fn read_config(args: &Args) -> Config {
 
 fn setup_localization(config: &Config) {
     let locale = &config.telegram.language;
-    
+
     let supported_locales = available_locales!();
     if !supported_locales.contains(&locale.as_str()) {
-        log::error!("Unsupported language '{locale}'. Supported languages: {}", supported_locales.join(", "));
+        log::error!(
+            "Unsupported language '{locale}'. Supported languages: {}",
+            supported_locales.join(", ")
+        );
         process::exit(1);
     }
-    
+
     set_locale(locale);
 }

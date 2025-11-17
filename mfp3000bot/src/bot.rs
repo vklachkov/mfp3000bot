@@ -1,24 +1,34 @@
+#[cfg(feature = "scan")]
 use crate::{
-    bot_data::*,
-    bot_utils::*,
-    config::Config,
+    scan_bot_buttons::*,
     pdf_builder::PdfBuilder,
-    print::{self, DocumentFormat},
     scan::{self, Jpeg, ScanState},
 };
+use crate::{
+    bot_utils::*,
+    config::Config,
+    print::{self, DocumentFormat},
+};
 use reqwest::Url;
-use std::{borrow::Cow, future::Future, io, str::FromStr, sync::Arc};
+use std::sync::Arc;
+
+#[cfg(feature = "scan")]
+use std::{borrow::Cow, future::Future, io, str::FromStr};
+#[cfg(feature = "scan")]
+use teloxide::types::InputFile;
 use teloxide::{
     dispatching::{
         dialogue::{self, InMemStorage},
         UpdateHandler,
     },
     prelude::*,
-    types::{Document, InputFile},
+    types::Document,
     utils::command::BotCommands,
 };
+#[cfg(feature = "scan")]
 use tokio::sync::{oneshot, Mutex};
 
+#[allow(unused)]
 pub type BotDialogue = Dialogue<BotState, InMemStorage<BotState>>;
 
 pub struct Globals {
@@ -31,9 +41,18 @@ pub enum BotCommand {
     Start,
     Help,
     Print,
+    #[cfg(feature = "scan")]
     Scan,
 }
 
+#[cfg(not(feature = "scan"))]
+#[derive(Clone, Default)]
+pub enum BotState {
+    #[default]
+    Empty,
+}
+
+#[cfg(feature = "scan")]
 #[derive(Clone, Default)]
 pub enum BotState {
     #[default]
@@ -78,10 +97,14 @@ pub enum BotState {
     },
 }
 
+#[cfg(feature = "scan")]
 pub type ScanCancellationToken = Arc<Mutex<Option<oneshot::Sender<()>>>>;
+#[cfg(feature = "scan")]
 pub type Page = Jpeg;
+#[cfg(feature = "scan")]
 pub type Pages = Vec<Jpeg>;
 
+#[cfg(feature = "scan")]
 enum ScanResult {
     Done(Page),
     Cancelled,
@@ -104,20 +127,28 @@ pub async fn start(config: Config) {
 fn schema() -> UpdateHandler<anyhow::Error> {
     use dptree::case;
 
+    #[allow(unused_mut)]
+    let mut branch_command = case![BotState::Empty]
+        .branch(case![BotCommand::Start].endpoint(hello))
+        .branch(case![BotCommand::Help].endpoint(help))
+        .branch(case![BotCommand::Print].endpoint(print_document_help));
+
+    #[cfg(feature = "scan")]
+    {
+        branch_command = branch_command.branch(case![BotCommand::Scan].endpoint(start_scan));
+    }
+
     let command_handler = teloxide::filter_command::<BotCommand, _>()
-        .branch(
-            case![BotState::Empty]
-                .branch(case![BotCommand::Start].endpoint(hello))
-                .branch(case![BotCommand::Help].endpoint(help))
-                .branch(case![BotCommand::Print].endpoint(print_document_help))
-                .branch(case![BotCommand::Scan].endpoint(start_scan)),
-        )
+        .branch(branch_command)
         .endpoint(bot_busy);
 
     let message_handler = Update::filter_message()
         .filter_async(filter_users)
         .branch(command_handler)
-        .branch(dptree::filter(|msg: Message| msg.document().is_some()).endpoint(print_document))
+        .branch(dptree::filter(|msg: Message| msg.document().is_some()).endpoint(print_document));
+
+    #[cfg(feature = "scan")]
+    let message_handler = message_handler
         .branch(
             case![BotState::ReceiveScannedPageName {
                 dialogue_message,
@@ -133,7 +164,10 @@ fn schema() -> UpdateHandler<anyhow::Error> {
             .endpoint(receive_document_name),
         );
 
-    let callback_query_handler = Update::filter_callback_query()
+    let callback_query_handler = Update::filter_callback_query();
+
+    #[cfg(feature = "scan")]
+    let callback_query_handler = callback_query_handler
         .branch(case![BotState::SelectScanMode { dialogue_message }].endpoint(select_scan_mode))
         .branch(
             case![BotState::SelectFirstScanAction {
@@ -281,6 +315,7 @@ async fn get_document(
 }
 
 /// Команда `/scan`.
+#[cfg(feature = "scan")]
 async fn start_scan(bot: Bot, dialogue: BotDialogue) -> anyhow::Result<()> {
     let dialogue_message =
         send_interative(&bot, &dialogue, t!("select_scan_mode"), &*SCAN_MODE_BUTTONS).await?;
@@ -292,6 +327,7 @@ async fn start_scan(bot: Bot, dialogue: BotDialogue) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn select_scan_mode(
     bot: Bot,
     dialogue: BotDialogue,
@@ -311,6 +347,7 @@ async fn select_scan_mode(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn show_scan_action_selector(
     bot: Bot,
     dialogue: BotDialogue,
@@ -345,6 +382,7 @@ async fn show_scan_action_selector(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn first_scan_action_selected(
     globals: Arc<Globals>,
     bot: Bot,
@@ -377,6 +415,7 @@ async fn first_scan_action_selected(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn scan_first_page(
     globals: Arc<Globals>,
     bot: Bot,
@@ -403,6 +442,7 @@ async fn scan_first_page(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn scan_first_page_task(
     globals: Arc<Globals>,
     bot: Bot,
@@ -437,6 +477,7 @@ async fn scan_first_page_task(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn scan_first_page_preview(
     globals: Arc<Globals>,
     bot: Bot,
@@ -472,6 +513,7 @@ async fn scan_first_page_preview(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn preview_page_task<Fn, F>(
     globals: Arc<Globals>,
     bot: Bot,
@@ -513,6 +555,7 @@ where
 /// Читает изображение из сканера, отображая состояние сканирования в сообщении.
 ///
 /// Возвращает ошибку только в случае сбоя Telegram.
+#[cfg(feature = "scan")]
 async fn scan_page(
     globals: Arc<Globals>,
     bot: &Bot,
@@ -550,6 +593,7 @@ async fn scan_page(
     Ok(ScanResult::Cancelled)
 }
 
+#[cfg(feature = "scan")]
 async fn receive_scan_cancellation(
     q: CallbackQuery,
     cancel: ScanCancellationToken, // From `State::ScanningPage`.
@@ -567,6 +611,7 @@ async fn receive_scan_cancellation(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn show_rename_page_dialog(
     bot: Bot,
     dialogue: BotDialogue,
@@ -591,6 +636,7 @@ async fn show_rename_page_dialog(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn receive_page_name(
     bot: Bot,
     dialogue: BotDialogue,
@@ -610,6 +656,7 @@ async fn receive_page_name(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn receive_page_rename_cancel(
     bot: Bot,
     dialogue: BotDialogue,
@@ -629,6 +676,7 @@ async fn receive_page_rename_cancel(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn send_page(
     bot: &Bot,
     chat_id: ChatId,
@@ -648,6 +696,7 @@ async fn send_page(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn show_document_action_selector(
     bot: Bot,
     dialogue: BotDialogue,
@@ -682,6 +731,7 @@ async fn show_document_action_selector(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn receive_multipage_scan_action_selection(
     globals: Arc<Globals>,
     bot: Bot,
@@ -715,6 +765,7 @@ async fn receive_multipage_scan_action_selection(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn scan_document_page(
     globals: Arc<Globals>,
     bot: Bot,
@@ -741,6 +792,7 @@ async fn scan_document_page(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn scan_document_page_task(
     globals: Arc<Globals>,
     bot: Bot,
@@ -772,6 +824,7 @@ async fn scan_document_page_task(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn ask_scan_cancel_confirmation(
     bot: Bot,
     dialogue: BotDialogue,
@@ -795,6 +848,7 @@ async fn ask_scan_cancel_confirmation(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn receive_scan_cancel_confirmation(
     bot: Bot,
     dialogue: BotDialogue,
@@ -822,6 +876,7 @@ async fn receive_scan_cancel_confirmation(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn scan_document_page_preview(
     globals: Arc<Globals>,
     bot: Bot,
@@ -856,6 +911,7 @@ async fn scan_document_page_preview(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn show_rename_document_dialog(
     bot: Bot,
     dialogue: BotDialogue,
@@ -880,6 +936,7 @@ async fn show_rename_document_dialog(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn receive_document_rename_cancel(
     globals: Arc<Globals>,
     bot: Bot,
@@ -901,6 +958,7 @@ async fn receive_document_rename_cancel(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn receive_document_name(
     globals: Arc<Globals>,
     bot: Bot,
@@ -921,6 +979,7 @@ async fn receive_document_name(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 async fn send_pdf(
     globals: &Arc<Globals>,
     bot: &Bot,
@@ -959,6 +1018,7 @@ async fn send_pdf(
     Ok(())
 }
 
+#[cfg(feature = "scan")]
 fn collect_images_to_pdf(title: String, dpi: f32, images: Vec<Jpeg>) -> Vec<u8> {
     let mut pdf_builder = PdfBuilder::new(&title, dpi);
 

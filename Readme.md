@@ -15,7 +15,13 @@ One day, I got tired of running back and forth between my laptop and the printer
 To build for the same architecture as your computer, simply run:
 
 ```
-cargo --build
+cargo build --release
+```
+
+Scanning support depends on the optional `scan` feature, which use `libsane` as a dependency. It is disabled by default. To build the bot with scanner support, use the following command:
+
+```
+cargo build --release --features scan
 ```
 
 For cross-platform builds, you'll need to use Docker.

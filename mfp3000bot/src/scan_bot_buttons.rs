@@ -75,14 +75,4 @@ pub static RENAME_DOCUMENT_BUTTONS: Buttons<1> = Lazy::new(|| {
     ]
 });
 
-pub fn buttons_to_inline_keyboard(buttons: &[(&str, (usize, &str))]) -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::new((0..buttons.len()).map(|idx| {
-        buttons
-            .iter()
-            .filter(move |(_, (row, _))| *row == idx)
-            .map(|(id, (_, text_key))| {
-                let text = t!(*text_key);
-                InlineKeyboardButton::callback(text, *id)
-            })
-    }))
-}
+
